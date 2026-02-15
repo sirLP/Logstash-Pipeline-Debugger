@@ -13,8 +13,16 @@ let lastParseResult = null;
 // Sample pfSense log entries
 const sampleLogs = {
     filterlog: `<134>1 2026-02-12T10:30:45.123456-05:00 pfSense.local filterlog 12345 - - 5,,,1000000103,igb0,match,block,in,4,0x0,,64,0,0,DF,6,tcp,60,192.168.1.100,8.8.8.8,12345,53,0,S,1234567890,,1024,,mss;sackOK;TS`,
-    dhcpd: `<30>Feb 12 10:45:23 pfSense dhcpd: DHCPACK on 192.168.1.150 to aa:bb:cc:dd:ee:ff (Johns-iPhone) via igb1`,
-    openvpn: `<134>Feb 12 11:20:15 pfSense openvpn[54321]: 192.168.10.5:12345 [client1] Peer Connection Initiated with [AF_INET]192.168.10.5:12345`
+    dhcp_discover: `<30>Feb 12 10:45:20 pfSense dhcpd: DHCPDISCOVER from aa:bb:cc:dd:ee:ff via igb1`,
+    dhcp_offer: `<30>Feb 12 10:45:20 pfSense dhcpd: DHCPOFFER on 192.168.1.150 to aa:bb:cc:dd:ee:ff via igb1`,
+    dhcp_ack: `<30>Feb 12 10:45:23 pfSense dhcpd: DHCPACK on 192.168.1.150 to aa:bb:cc:dd:ee:ff (Johns-iPhone) via igb1`,
+    dhcp_nack: `<30>Feb 12 10:46:10 pfSense dhcpd: DHCPNAK on 192.168.1.100 to aa:bb:cc:dd:ee:ff via igb1`,
+    dhcp_release: `<30>Feb 12 10:50:45 pfSense dhcpd: DHCPRELEASE of 192.168.1.150 from aa:bb:cc:dd:ee:ff via igb1`,
+    openvpn: `<134>Feb 12 11:20:15 pfSense openvpn[54321]: 192.168.10.5:12345 [client1] Peer Connection Initiated with [AF_INET]192.168.10.5:12345`,
+    sshguard_attack: `1 2026-02-15T22:27:15.063047+01:00 pfSense.lohdal.com sshguard 6554 - - Attack from "192.168.178.58" on service unknown service with danger 10.`,
+    sshguard_blocking: `<38>1 2026-02-15T22:27:37.012592+01:00 pfSense.lohdal.com sshguard 6554 - - Blocking "192.168.178.58/32" for 120 secs (3 attacks in 22 secs, after 1 abuses over 22 secs.)`,
+    phpfpm_auth_failure: `<32>1 2026-02-15T22:27:37.010961+01:00 pfSense.lohdal.com php-fpm 39332 - - /index.php: webConfigurator authentication error for user 'slp' from: 192.168.178.58`,
+    phpfpm_auth_success: `<32>1 2026-02-15T22:28:42.123456+01:00 pfSense.lohdal.com php-fpm 39332 - - /index.php: webConfigurator login for user 'admin' from: 192.168.178.100`
 };
 
 // Sample Logstash configuration for pfSense
@@ -2046,6 +2054,16 @@ function detectEventLogType(event) {
         return 'openvpn';
     }
     
+    // Check for SSHGuard
+    if (appname === 'sshguard' || tags.includes('sshguard')) {
+        return 'sshguard';
+    }
+    
+    // Check for Web Portal (php-fpm)
+    if (appname === 'php-fpm' || tags.includes('web_portal') || tags.includes('authentication_failure') || tags.includes('authentication_success')) {
+        return 'web_portal';
+    }
+    
     // Check for HAProxy
     if (appname === 'haproxy' || tags.includes('haproxy')) {
         return 'haproxy';
@@ -2107,6 +2125,12 @@ function generateSummaryContent(finalEvent, logType) {
             break;
         case 'openvpn':
             sections = generateOpenVPNSummary(finalEvent, common);
+            break;
+        case 'sshguard':
+            sections = generateSSHGuardSummary(finalEvent, common);
+            break;
+        case 'web_portal':
+            sections = generateWebPortalSummary(finalEvent, common);
             break;
         default:
             sections = generateSystemSummary(finalEvent, common);
@@ -2443,26 +2467,77 @@ function generateDNSSummary(event, common) {
  */
 function generateDHCPSummary(event, common) {
     const dhcp = event['dhcp'] || {};
+    const dhcpv4 = event['dhcpv4'] || {};
+    const dhcpv6 = event['dhcpv6'] || {};
+    
+    // Get operation type
+    const operation = dhcp['operation'] || event['event']?.['action'] || 'UNKNOWN';
+    
+    // Determine icon and styling based on operation type
+    let icon = '📡';
+    let operationClass = 'info';
+    
+    switch(operation.toUpperCase()) {
+        case 'DISCOVER':
+            icon = '🔍';
+            operationClass = 'info';
+            break;
+        case 'OFFER':
+            icon = '💬';
+            operationClass = 'warning';
+            break;
+        case 'REQUEST':
+            icon = '📤';
+            operationClass = 'info';
+            break;
+        case 'ACK':
+        case 'ACKNOWLEDGEMENT':
+            icon = '✅';
+            operationClass = 'success';
+            break;
+        case 'NACK':
+        case 'NAK':
+            icon = '❌';
+            operationClass = 'failure';
+            break;
+        case 'RELEASE':
+            icon = '🔴';
+            operationClass = 'warning';
+            break;
+        case 'DECLINE':
+            icon = '⛔';
+            operationClass = 'failure';
+            break;
+        case 'INFORM':
+            icon = 'ℹ️';
+            operationClass = 'info';
+            break;
+    }
+    
+    // Collect Client Info - try both IPv4 and IPv6
+    const clientMac = dhcpv4['client']?.['mac'] || dhcpv6['client']?.['mac'] || 'N/A';
+    const clientIp = dhcpv4['client']?.['ip'] || dhcpv6['client']?.['ip'] || 'N/A';
+    const hostname = dhcpv4['option']?.['hostname'] || dhcpv6['option']?.['hostname'] || 'N/A';
     
     return `
         <div class="summary-grid">
             <div class="summary-section">
-                <h3>📡 DHCP Event</h3>
+                <h3>${icon} DHCP ${operation.toUpperCase()}</h3>
                 <div class="summary-item">
-                    <span class="summary-label">Action:</span>
-                    <span class="summary-value">${escapeHtml(String(dhcp['action'] || event['event']?.['action'] || 'N/A')).toUpperCase()}</span>
+                    <span class="summary-label">Status:</span>
+                    <span class="summary-value action ${operationClass}">${operation.toUpperCase()}</span>
                 </div>
                 <div class="summary-item">
                     <span class="summary-label">Client IP:</span>
-                    <span class="summary-value ip">${escapeHtml(dhcp['client_ip'] || event['client']?.['ip'] || 'N/A')}</span>
+                    <span class="summary-value ip">${escapeHtml(clientIp)}</span>
                 </div>
                 <div class="summary-item">
                     <span class="summary-label">Client MAC:</span>
-                    <span class="summary-value">${escapeHtml(dhcp['client_mac'] || event['client']?.['mac'] || 'N/A')}</span>
+                    <span class="summary-value">${escapeHtml(clientMac)}</span>
                 </div>
                 <div class="summary-item">
                     <span class="summary-label">Hostname:</span>
-                    <span class="summary-value">${escapeHtml(dhcp['hostname'] || common.hostname)}</span>
+                    <span class="summary-value">${escapeHtml(hostname)}</span>
                 </div>
             </div>
             
@@ -2475,6 +2550,10 @@ function generateDHCPSummary(event, common) {
                 <div class="summary-item">
                     <span class="summary-label">Timestamp:</span>
                     <span class="summary-value">${escapeHtml(common.timestamp)}</span>
+                </div>
+                <div class="summary-item">
+                    <span class="summary-label">Dataset:</span>
+                    <span class="summary-value">${escapeHtml(event['event']?.['dataset'] || 'pfelk.dhcp')}</span>
                 </div>
             </div>
         </div>
@@ -2513,6 +2592,198 @@ function generateOpenVPNSummary(event, common) {
                     <span class="summary-label">Timestamp:</span>
                     <span class="summary-value">${escapeHtml(common.timestamp)}</span>
                 </div>
+            </div>
+        </div>
+    `;
+}
+
+/**
+ * Generate SSHGuard attack detection summary
+ */
+function generateSSHGuardSummary(event, common) {
+    const sshguard = event['sshguard'] || {};
+    const source = event['source'] || {};
+    const eventAction = event['event']?.action || 'unknown';
+    
+    // Handle blocking events
+    if (eventAction === 'blocking') {
+        const blockedTarget = sshguard['blocked_target'] || 'N/A';
+        const blockDuration = sshguard['block_duration'] || 0;
+        const attackCount = sshguard['attack_count'] || 0;
+        const attackTimeframe = sshguard['attack_timeframe'] || 0;
+        const abuseCount = sshguard['abuse_count'] || 0;
+        const abuseTimeframe = sshguard['abuse_timeframe'] || 0;
+        
+        return `
+            <div class="summary-grid">
+                <div class="summary-section">
+                    <h3>🚫 Host Blocked</h3>
+                    <div class="summary-item">
+                        <span class="summary-label">Blocked Target:</span>
+                        <span class="summary-value ip">${escapeHtml(blockedTarget)}</span>
+                    </div>
+                    <div class="summary-item">
+                        <span class="summary-label">Block Duration:</span>
+                        <span class="summary-value action critical">${blockDuration} seconds</span>
+                    </div>
+                </div>
+                
+                <div class="summary-section">
+                    <h3>📊 Attack Statistics</h3>
+                    <div class="summary-item">
+                        <span class="summary-label">Attacks Detected:</span>
+                        <span class="summary-value">${attackCount} in ${attackTimeframe}s</span>
+                    </div>
+                    <div class="summary-item">
+                        <span class="summary-label">Previous Abuses:</span>
+                        <span class="summary-value">${abuseCount} in ${abuseTimeframe}s</span>
+                    </div>
+                </div>
+                
+                <div class="summary-section">
+                    <h3>📋 Details</h3>
+                    <div class="summary-item">
+                        <span class="summary-label">Server:</span>
+                        <span class="summary-value">${escapeHtml(common.hostname)}</span>
+                    </div>
+                    <div class="summary-item">
+                        <span class="summary-label">Timestamp:</span>
+                        <span class="summary-value">${escapeHtml(common.timestamp)}</span>
+                    </div>
+                    <div class="summary-item">
+                        <span class="summary-label">Category:</span>
+                        <span class="summary-value action threat">Intrusion Detection</span>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+    
+    // Handle attack detection events
+    const danger = sshguard['danger'] || 0;
+    
+    // Determine danger level color/label
+    let dangerLabel = 'Low';
+    let dangerClass = 'low';
+    if (danger >= 50) {
+        dangerLabel = 'Critical';
+        dangerClass = 'critical';
+    } else if (danger >= 30) {
+        dangerLabel = 'High';
+        dangerClass = 'high';
+    } else if (danger >= 10) {
+        dangerLabel = 'Medium';
+        dangerClass = 'medium';
+    }
+    
+    return `
+        <div class="summary-grid">
+            <div class="summary-section">
+                <h3>⚠️ Attack Detection</h3>
+                <div class="summary-item">
+                    <span class="summary-label">Attacker IP:</span>
+                    <span class="summary-value ip">${escapeHtml(source['ip'] || 'N/A')}</span>
+                </div>
+                <div class="summary-item">
+                    <span class="summary-label">Service:</span>
+                    <span class="summary-value">${escapeHtml(sshguard['service'] || 'N/A')}</span>
+                </div>
+                <div class="summary-item">
+                    <span class="summary-label">Danger Score:</span>
+                    <span class="summary-value action ${dangerClass}">${danger} (${dangerLabel})</span>
+                </div>
+            </div>
+            
+            <div class="summary-section">
+                <h3>📋 Details</h3>
+                <div class="summary-item">
+                    <span class="summary-label">Server:</span>
+                    <span class="summary-value">${escapeHtml(common.hostname)}</span>
+                </div>
+                <div class="summary-item">
+                    <span class="summary-label">Timestamp:</span>
+                    <span class="summary-value">${escapeHtml(common.timestamp)}</span>
+                </div>
+                <div class="summary-item">
+                    <span class="summary-label">Category:</span>
+                    <span class="summary-value action threat">Intrusion Detection</span>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+/**
+ * Generate web portal authentication summary
+ */
+function generateWebPortalSummary(event, common) {
+    const user = event['user'] || {};
+    const source = event['source'] || {};
+    const url = event['url'] || {};
+    const eventData = event['event'] || {};
+    const pf = event['pf'] || {};
+    
+    // Get username for prominent display
+    const username = user['name'] || pf['app']?.['user'] || 'Unknown User';
+    
+    // Determine auth outcome
+    const isAuthFailure = eventData['outcome'] === 'failure' || event['tags']?.includes('authentication_failure');
+    const isAuthSuccess = eventData['outcome'] === 'success' || event['tags']?.includes('authentication_success');
+    
+    let authIcon = '🌐';
+    let authStatus = 'Web Portal Activity';
+    let authClass = 'info';
+    
+    if (isAuthFailure) {
+        authIcon = '❌';
+        authStatus = 'Authentication Failed';
+        authClass = 'critical';
+    } else if (isAuthSuccess) {
+        authIcon = '✅';
+        authStatus = 'Authentication Successful';
+        authClass = 'success';
+    }
+    
+    return `
+        <div class="summary-grid">
+            <div class="summary-section">
+                <h3>${authIcon} ${authStatus} - User: <span class="action ${authClass}">${escapeHtml(username)}</span></h3>
+                <div class="summary-item">
+                    <span class="summary-label">Client IP:</span>
+                    <span class="summary-value ip">${escapeHtml(source['ip'] || pf['remote']?.['ip'] || 'N/A')}</span>
+                </div>
+                <div class="summary-item">
+                    <span class="summary-label">Page:</span>
+                    <span class="summary-value">${escapeHtml(url['path'] || pf['app']?.['page'] || 'N/A')}</span>
+                </div>
+                ${eventData['action'] ? `
+                <div class="summary-item">
+                    <span class="summary-label">Action:</span>
+                    <span class="summary-value action ${authClass}">${escapeHtml(eventData['action'])}</span>
+                </div>
+                ` : ''}
+            </div>
+            
+            <div class="summary-section">
+                <h3>📋 Details</h3>
+                <div class="summary-item">
+                    <span class="summary-label">Server:</span>
+                    <span class="summary-value">${escapeHtml(common.hostname)}</span>
+                </div>
+                <div class="summary-item">
+                    <span class="summary-label">Timestamp:</span>
+                    <span class="summary-value">${escapeHtml(common.timestamp)}</span>
+                </div>
+                <div class="summary-item">
+                    <span class="summary-label">Category:</span>
+                    <span class="summary-value">${escapeHtml(eventData['category'] || 'Web Application')}</span>
+                </div>
+                ${eventData['severity'] !== undefined ? `
+                <div class="summary-item">
+                    <span class="summary-label">Severity:</span>
+                    <span class="summary-value">${eventData['severity']}</span>
+                </div>
+                ` : ''}
             </div>
         </div>
     `;

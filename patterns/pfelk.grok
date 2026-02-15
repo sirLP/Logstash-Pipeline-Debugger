@@ -98,6 +98,15 @@ SQUID %{IPORHOST:[client][ip]} %{NOTSPACE:[labels][request_status]}/%{NUMBER:[ht
 # Common base patterns
 LOGLEVEL ([Aa]lert|ALERT|[Tt]race|TRACE|[Dd]ebug|DEBUG|[Nn]otice|NOTICE|[Ii]nfo|INFO|[Ww]arn?(?:ing)?|WARN?(?:ING)?|[Ee]rr?(?:or)?|ERR?(?:OR)?|[Cc]rit?(?:ical)?|CRIT?(?:ICAL)?|[Ff]atal|FATAL|[Ss]evere|SEVERE|EMERG(?:ENCY)?|[Ee]merg(?:ency)?)
 
+# SSHGUARD - Brute-force attack detection and prevention
+# Format 1: Attack from "<ip>" on service <service> with danger <level>.
+# Example: Attack from "192.168.178.58" on service unknown service with danger 10.
+# Format 2: Blocking "<ip/cidr>" for <seconds> secs (<count> attacks in <time> secs, after <abuses> abuses over <time> secs.)
+# Example: Blocking "192.168.178.58/32" for 120 secs (3 attacks in 22 secs, after 1 abuses over 22 secs.)
+SSHGUARD (%{SSHGUARD_ATTACK}|%{SSHGUARD_BLOCKING})
+SSHGUARD_ATTACK Attack from "(?<source_ip>[^"]+)" on service %{DATA:sshguard_service} with danger %{INT:sshguard_danger:int}
+SSHGUARD_BLOCKING Blocking "(?<blocked_target>[^"]+)" for %{INT:block_duration:int} secs \((?<attack_count>\d+) attacks in (?<attack_timeframe>\d+) secs, after (?<abuse_count>\d+) abuses over (?<abuse_timeframe>\d+) secs\.\)
+
 # UNBOUND - DNS query/resolution logs
 # Matches three formats:
 # 1. With client IP: [PID:TID] level: client_ip domain. type class [response_code timing cache_flag size]
