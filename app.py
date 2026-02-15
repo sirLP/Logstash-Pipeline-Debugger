@@ -6,7 +6,10 @@ import re
 import json
 import os
 from datetime import datetime
-from logstash_parser import LogstashParser
+try:
+    from logstash_pipeline import LogstashParser, parse_config_to_tree
+except Exception:
+    from logstash_parser import LogstashParser, parse_config_to_tree
 
 app = Flask(__name__)
 
@@ -150,7 +153,6 @@ def parse_log():
             print("*" * 80 + "\n")
             
             # Parse config to tree
-            from logstash_parser import parse_config_to_tree
             tree = parse_config_to_tree(config['content'])
             
             # Process event through tree
