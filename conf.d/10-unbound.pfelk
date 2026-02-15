@@ -1,0 +1,110 @@
+# 10-unbound.pfelk
+################################################################################
+# Version: 24.09                                                               #
+# Required: False                                                              #
+# Description: Parses Unbound DNS resolver logs including queries, responses,  #
+#              and DNSSEC validation messages                                  #
+################################################################################
+#
+filter {
+  ### unbound ###
+  if [log][syslog][appname] =~ /^unbound/ {
+    mutate {
+      add_tag => "unbound"
+      add_field => { "[event][dataset]" => "pfelk.unbound" }
+    }
+    
+    # Parse DNSSEC validation messages
+    if [filter_message] =~ /Verified that/ {
+      grok {
+        match => [ "filter_message", "\[%{INT:[process][pgid]}:%{INT:[process][thread][id]}\] %{LOGLEVEL:[log][level]}: Verified that %{WORD:[dnssec][response_type]} response is %{WORD:[dnssec][validation_state]}" ]
+      }
+      mutate {
+        add_field => { "[dnssec][message_type]" => "validation" }
+        add_tag => "dnssec_validation"
+      }
+    }
+    else if [filter_message] =~ /NSEC3?s? / {
+      grok {
+        match => [ "filter_message", "\[%{INT:[process][pgid]}:%{INT:[process][thread][id]}\] %{LOGLEVEL:[log][level]}: %{WORD:[dnssec][proof_type]} for %{DATA:[dnssec][target]} (?<[dnssec][result]>proved .+)$" ]
+      }
+      mutate {
+        add_field => { "[dnssec][message_type]" => "proof" }
+        add_tag => "dnssec_proof"
+      }
+    }
+    else if [filter_message] =~ /validation failure/ {
+      grok {
+        match => [ "filter_message", "\[%{INT:[process][pgid]}:%{INT:[process][thread][id]}\] %{LOGLEVEL:[log][level]}: validation failure %{NOTSPACE:[dns][question][name]}" ]
+      }
+      mutate {
+        add_field => { 
+          "[dnssec][message_type]" => "validation_failure"
+          "[event][outcome]" => "failure"
+        }
+        add_tag => "dnssec_failure"
+      }
+    }
+    else if [filter_message] =~ /prime trust anchor/ {
+      grok {
+        match => [ "filter_message", "\[%{INT:[process][pgid]}:%{INT:[process][thread][id]}\] %{LOGLEVEL:[log][level]}: %{DATA:[dnssec][action]}: %{GREEDYDATA:[dnssec][details]}" ]
+      }
+      mutate {
+        add_field => { "[dnssec][message_type]" => "trust_anchor" }
+        add_tag => "dnssec_anchor"
+      }
+    }
+    else if [filter_message] =~ /sendto failed/ {
+      grok {
+        match => [ "filter_message", "\[%{INT:[process][pgid]}:%{INT:[process][thread][id]}\] %{LOGLEVEL:[log][level]}: sendto failed: %{GREEDYDATA:[network][error]}" ]
+      }
+      mutate {
+        add_field => { "[event][outcome]" => "failure" }
+        add_tag => "network_error"
+      }
+    }
+    # Parse actual DNS queries/responses
+    else {
+      # First, check for response status messages (e.g., "query response was nodata ANSWER")
+      if [filter_message] =~ /query response was/ {
+        grok {
+          match => [ "filter_message", "\[%{INT:[process][pgid]}:%{INT:[process][thread][id]}\] %{LOGLEVEL:[log][level]}: query response was %{WORD:[dns][response_status]} %{WORD:[dns][response_type]}" ]
+        }
+        mutate {
+          add_field => { "[dns][message_type]" => "response_status" }
+        }
+      }
+      # Otherwise, parse as normal DNS query/response
+      else {
+        grok {
+          patterns_dir => [ "/etc/pfelk/patterns" ]
+          match => [ "filter_message", "%{UNBOUND}" ]
+        }
+        if "_grokparsefailure" in [tags] {
+          mutate { remove_tag => [ "_grokparsefailure" ] }
+          grok {
+            patterns_dir => [ "/etc/pfelk/patterns" ]
+            match => [ "filter_message", "%{UNBOUND_RESOLVING}" ]
+          }
+        }
+        ### unbound ECS => Built-in SIEM ###
+        grok {
+          match => [ "[dns][question][name]", "(\.)?(?<[dns][question][registered_domain]>[^.]+\.[^.]+)\.?$" ] 
+          add_tag => "unbound-registered_domain"
+        }
+        if "unbound-registered_domain" not in [tags] {
+          grok { 
+            match => [ "[dns][question][name]", "(?<[dns][question][registered_domain]>[^.]+\.[^.]+)\.?$" ] 
+          }
+        }
+        grok {
+          match => [ "[dns][question][name]", "(\.)?(?<[dns][question][top_level_domain]>[^.]+)\.?$" ]
+        }
+
+        mutate {
+          remove_tag => "unbound-registered_domain"
+        }
+      }
+    }
+  }
+}

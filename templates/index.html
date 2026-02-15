@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Logstash pfSense Parser Visualizer - Flask Edition</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🔍 Logstash pfSense Parser Visualizer</h1>
+            <p>Visualize how your Logstash configuration parses pfSense syslog entries step by step</p>
+        </header>
+
+        <div class="main-content">
+            <div class="input-section">
+                <h2>Configuration Pipeline</h2>
+                <div class="pipeline-info">
+                    <p>💡 Upload multiple config files to simulate a processing chain. They'll be applied in order.</p>
+                </div>
+                
+                <div class="config-upload">
+                    <input type="file" id="logstash-config" accept=".conf,.pfelk" multiple style="display: none;">
+                    <button id="add-config-btn" class="btn-secondary">➕ Add Config File(s)</button>
+                </div>
+
+                <div class="sample-logs" style="margin-top: 15px;">
+                    <h3>Sample pfSense Config</h3>
+                    <button class="sample-config-btn btn-secondary-small" data-config="pfsense">📄 Load Sample Config</button>
+                </div>
+
+                <div id="config-chain-container">
+                    <!-- Config chain items will be added here -->
+                </div>
+                
+                <div class="or-divider">
+                    <span>OR</span>
+                </div>
+
+                <div class="config-textarea">
+                    <label for="config-text">Paste Single Configuration:</label>
+                    <textarea id="config-text" placeholder="filter {
+  grok {
+    match => { &quot;message&quot; => &quot;%{SYSLOGLINE}&quot; }
+  }
+  ...
+}"></textarea>
+                    <button id="add-pasted-config" class="btn-secondary">Add to Pipeline</button>
+                </div>
+
+                <h2>Test Log Entry</h2>
+                <div class="log-input">
+                    <div class="log-input-header">
+                        <label for="log-entry">Enter Log Entry:</label>
+                        <div id="auto-detected-type" style="display: none; color: #667eea; font-size: 0.9em; margin-top: 5px;">
+                            <strong>Auto-detected:</strong> <span id="detected-type-name"></span>
+                        </div>
+                    </div>
+                    <textarea id="log-entry" placeholder="<134>1 2026-02-12T10:30:45.123456-05:00 pfSense.local filterlog 12345 - - 5,,,1000000103,igb0,match,block,in,4,0x0,,64,0,0,DF,6,tcp,60,192.168.1.100,8.8.8.8,12345,53,0,S,1234567890,,1024,,mss;sackOK;TS"></textarea>
+                    <div class="log-input-actions">
+                        <button id="parse-btn" class="btn-primary">Parse Log Entry</button>
+                        <label for="pcap-upload" class="btn-secondary" style="margin-left: 10px; cursor: pointer;">
+                            📦 Upload PCAP
+                            <input type="file" id="pcap-upload" accept=".pcap,.pcapng,.cap" style="display: none;">
+                        </label>
+                    </div>
+                </div>
+
+                <!-- PCAP Log Selection Card -->
+                <div id="pcap-logs-card" class="pcap-logs-card" style="display: none;">
+                    <h3>📦 Logs from PCAP <button id="close-pcap-card" class="btn-close">✖</button></h3>
+                    <div class="pcap-info"></div>
+                    <div id="pcap-logs-list" class="pcap-logs-list"></div>
+                </div>
+
+                <div class="sample-logs">
+                    <h3>Sample pfSense Logs</h3>
+                    <button class="sample-btn" data-sample="filterlog">Firewall Filter Log</button>
+                    <button class="sample-btn" data-sample="dhcpd">DHCP Log</button>
+                    <button class="sample-btn" data-sample="openvpn">OpenVPN Log</button>
+                </div>
+            </div>
+
+            <div class="output-section">
+                <div class="results-header">
+                    <h2>Parsing Pipeline Results</h2>
+                </div>
+                <div class="header-buttons">
+                    <button id="show-structure-btn" class="btn-secondary" style="display: none;">
+                        🔍 View Nesting Structure
+                    </button>
+                    <button id="export-json-btn" class="btn-export" style="display: none;">
+                        📥 Export Results as JSON
+                    </button>
+                </div>
+                <div id="results-container">
+                    <div class="placeholder">
+                        <p>👆 Enter a log entry and click "Parse Log Entry" to see the parsing pipeline in action</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Summary Modal -->
+    <div id="summary-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>📋 Log Summary</h2>
+                <span class="modal-close" onclick="closeSummaryModal()">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div id="summary-content"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Structure Modal -->
+    <div id="structure-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>📊 Configuration Nesting Structure</h2>
+                <span class="modal-close">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div id="structure-tree"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Config Modal -->
+    <div id="configModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="modalTitle">Filter Configuration</h2>
+                <span class="modal-close">&times;</span>
+            </div>
+            <div class="modal-body">
+                <pre id="modalConfig"></pre>
+            </div>
+        </div>
+    </div>
+
+    <!-- Message Selection Modal -->
+    <div id="message-selection-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>📦 Multiple Messages Detected</h2>
+                <span class="modal-close" onclick="closeMessageSelectionModal()">&times;</span>
+            </div>
+            <div class="modal-body">
+                <p>This packet contains <strong id="message-count">0</strong> log messages. Select one to parse:</p>
+                <div id="message-selection-list" style="max-height: 400px; overflow-y: auto;"></div>
+            </div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>
+

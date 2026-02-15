@@ -1,0 +1,67 @@
+input {
+  tcp {
+    id => "pfelk-suricata-tcp"
+    port => 5140
+    codec => plain
+    type => "suricata"
+    tags => ["pfelk", "suricata_json_stream"]
+  }
+
+  udp {
+    id => "pfelk-firewall-udp"
+    port => 5141
+    type => "syslog"
+    codec => plain { charset => "UTF-8" }
+    tags => ["pfelk", "firewall_raw"]
+  }
+
+  tcp {
+    id => "pfelk-dns-tcp"
+    port => 5142
+    type => "unbound"
+    codec => plain { charset => "UTF-8" }
+    tags => ["pfelk", "unbound_raw"]
+  }
+}
+
+filter {
+  if [type] == "suricata" {
+    grok { match => { "message" => "(?<filter_message>\{.*\".*\":.*\})" } }
+    mutate { 
+      add_field => { "[@metadata][pfelk_namespace]" => "suricata" }
+      replace => { "[log][syslog][appname]" => "suricata" }
+    }
+    if [filter_message] =~ /^\{/ {
+      json { source => "filter_message" target => "[suricata][eve]" add_tag => "suricata_json" }
+    }
+  } 
+  else if [type] == "unbound" {
+    # 1. Strip the outer syslog-ng envelope (Header 1)
+    grok {
+      match => { "message" => "<%{INT:[log][syslog][priority]}>%{INT:[log][syslog][version]}\s+%{NOTSPACE}\s+%{NOTSPACE}\s+%{NOTSPACE}\s+\[meta sequenceId=\"%{INT}\"\]\s+%{GREEDYDATA:filter_message}" }
+    }
+    
+    # 2. Strip the inner pfSense syslog header (RFC5424 format)
+    grok {
+      match => { "filter_message" => "%{TIMESTAMP_ISO8601}\s+%{NOTSPACE}\s+%{NOTSPACE}\s+%{NOTSPACE}\s+-\s+-\s+%{GREEDYDATA:filter_message}" }
+      overwrite => [ "filter_message" ]
+    }
+
+    # 3. Final cleanup for pfELK consumption
+    mutate { 
+      strip => ["filter_message"]
+      add_field => { "[@metadata][pfelk_namespace]" => "unbound" }
+      replace => { "[log][syslog][appname]" => "unbound" }
+    }
+  }
+  else {
+    # Standard Firewall RFC5424 unwrapping
+    grok {
+      match => { "message" => "<%{INT:[log][syslog][priority]}>%{INT:[log][syslog][version]} %{NOTSPACE:[log][syslog][timestamp]} %{NOTSPACE:[log][syslog][hostname]} %{NOTSPACE:[log][syslog][appname]} %{NOTSPACE:[log][syslog][procid]} %{NOTSPACE:[log][syslog][msgid]} %{NOTSPACE:[log][syslog][structured_data]} %{GREEDYDATA:filter_message}" }
+    }
+    mutate {
+      add_field => { "[@metadata][pfelk_namespace]" => "firewall" }
+      replace => { "type" => "firewall" }
+    }
+  }
+}

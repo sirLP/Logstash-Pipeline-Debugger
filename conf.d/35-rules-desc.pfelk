@@ -1,0 +1,22 @@
+# 35-rules-desc.pfelk
+################################################################################
+# Version: 23.08                                                               #
+# Required: No - Optional                                                      #
+# Description: Checks for the presense of the rule_number field, if present    #
+# runs translates the rule_number into a referenced description.               #
+################################################################################
+#
+filter {
+  if "firewall" in [tags] {
+    if [rule][uuid] {
+      translate {
+        source => "[rule][uuid]"
+        target => "[rule][description]"
+        dictionary_path => "/etc/pfelk/databases/rule-names.csv"
+        refresh_interval => 60
+        refresh_behaviour => replace
+        fallback => "Rule ID: %{[rule][uuid]}"
+      }
+    }
+  }
+}

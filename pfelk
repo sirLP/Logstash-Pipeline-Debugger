@@ -1,0 +1,39 @@
+# pfELK Grok Patterns
+# Common patterns for pfSense/OPNsense firewall logs
+
+# IPv4 and IPv6
+IPV4OR6 (?:%{IPV4}|%{IPV6})
+
+# Firewall specific patterns
+PFELK_PROTOCOL (?:tcp|udp|icmp|igmp|esp|ah|gre)
+PFELK_ACTION (?:pass|block|reject)
+PFELK_DIRECTION (?:in|out)
+PFELK_INTERFACE \w+
+
+# Syslog priority and facility
+SYSLOG_PRIORITY <\d+>
+SYSLOG_FACILITY \d+
+
+# pfSense/OPNsense filterlog format
+PFELK_FILTERLOG_DATA %{INT:rule_number},%{DATA:sub_rule},%{DATA:anchor},%{INT:tracker},%{DATA:interface},%{DATA:reason},%{DATA:action},%{DATA:direction},%{INT:ip_ver}
+
+# Common network patterns
+MAC_ADDRESS (?:[A-Fa-f0-9]{2}[:-]){5}[A-Fa-f0-9]{2}
+VLAN_ID \d{1,4}
+
+# DNS patterns
+DNS_QUERY_TYPE (?:A|AAAA|NS|CNAME|SOA|PTR|MX|TXT|SRV|CAA)
+DNS_QUERY_CLASS (?:IN|CS|CH|HS)
+
+# HTTP patterns
+HTTP_METHOD (?:GET|POST|PUT|DELETE|HEAD|OPTIONS|PATCH|TRACE|CONNECT)
+HTTP_VERSION HTTP/%{NUMBER}
+HTTP_STATUS \d{3}
+
+# Timestamp patterns
+PFELK_TIMESTAMP %{YEAR}-%{MONTHNUM}-%{MONTHDAY}[T ]%{HOUR}:?%{MINUTE}(?::?%{SECOND})?%{ISO8601_TIMEZONE}?
+
+# Application patterns
+APPNAME [a-zA-Z0-9\._-]+
+PROCESS_NAME [a-zA-Z0-9\._\-/]+
+PID \d+

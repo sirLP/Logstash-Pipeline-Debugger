@@ -1,0 +1,28 @@
+# Suricata/IDS patterns
+
+# Suricata alert fields
+SURICATA_PRIORITY \d+
+SURICATA_CATEGORY [\w\s\-\.]+
+SURICATA_SIGNATURE_ID \d+
+SURICATA_REVISION \d+
+
+# Flow and packet data
+FLOW_ID \d+
+PACKET_SIZE \d+
+STREAM_SIZE \d+
+
+# Alert signature
+SURICATA_SIGNATURE .*
+SURICATA_ACTION (?:allowed|blocked|dropped)
+
+# Eve JSON fields (common in Suricata)
+EVE_TIMESTAMP %{YEAR}-%{MONTHNUM}-%{MONTHDAY}T%{HOUR}:%{MINUTE}:%{SECOND}\.%{INT}%{ISO8601_TIMEZONE}
+EVE_EVENT_TYPE (?:alert|dns|http|tls|ssh|flow|fileinfo|stats|anomaly)
+
+# Protocol specific
+TLS_VERSION (?:SSL 3\.0|TLS 1\.0|TLS 1\.1|TLS 1\.2|TLS 1\.3)
+TLS_SNI [a-zA-Z0-9\.\-]+
+
+# DNS specific
+DNS_OPCODE (?:QUERY|IQUERY|STATUS|NOTIFY|UPDATE)
+DNS_RCODE (?:NOERROR|FORMERR|SERVFAIL|NXDOMAIN|NOTIMP|REFUSED)
