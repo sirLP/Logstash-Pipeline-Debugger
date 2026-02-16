@@ -41,7 +41,7 @@ filter {
     if [filter_message] =~ /^Attack from/ {
       mutate {
         add_field => { "[event][action]" => "attack" }
-        add_field => { "[event][type]" => "allowed" }
+        add_field => { "[event][type]" => "denied" }
         rename => {
           "source_ip" => "[source][ip]"
           "sshguard_service" => "[sshguard][service]"
