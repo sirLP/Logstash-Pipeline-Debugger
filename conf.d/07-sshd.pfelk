@@ -1,0 +1,45 @@
+# 07-sshd.pfelk
+################################################################################
+# Version: 25.12                                                               #
+# Required: False                                                              #
+# Description: Parses SSH daemon (sshd) authentication logs from pfSense       #
+#              Extracts authentication success/failure events with source IPs  #
+#              and credentials                                                 #
+################################################################################
+#
+filter {
+  ### sshd ###
+  if [log][syslog][appname] =~ /^sshd/ {
+    mutate {
+      add_tag => "sshd"
+      add_field => { "[event][dataset]" => "pfelk.sshd" }
+      add_field => { "[data_stream][namespace]" => "sshd" }
+      add_field => { "[event][category]" => "authentication" }
+    }
+    # Parse authentication failures
+    if [filter_message] =~ /authentication failure|Authentication failure|failed|error/ {
+      grok {
+        match => [ "filter_message", "(?:error: )?PAM: (?<[event][reason]>.*?) for (?<[user][name]>[\w\-\.]+) from (?<[source][ip]>[\d\.]+)" ]
+      }
+      if ![event][reason] {
+        grok {
+          match => [ "filter_message", "(?<[log][level]>\w+):\s*(?<[event][reason]>.*)" ]
+        }
+      }
+      mutate {
+        replace => { "[event][outcome]" => "failure" }
+        replace => { "[event][action]" => "authentication_failure" }
+      }
+    }
+    # Parse successful authentication
+    else if [filter_message] =~ /[Aa]ccept|success/ {
+      grok {
+        match => [ "filter_message", "(?<[event][auth_method]>publickey|password|gssapi-with-mic|keyboard-interactive) for (?<[user][name]>[\w\-\.]+) from (?<[source][ip]>[\d\.]+)" ]
+      }
+      mutate {
+        replace => { "[event][outcome]" => "success" }
+        replace => { "[event][action]" => "authentication_success" }
+      }
+    }
+  }
+}

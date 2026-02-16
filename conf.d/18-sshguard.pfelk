@@ -24,8 +24,12 @@ filter {
       mutate {
         add_field => { "[event][action]" => "blocking" }
         add_field => { "[event][type]" => "denied" }
+        # Extract IP address from blocked_target (remove CIDR notation like /32)
+        gsub => [ "blocked_target", "/\d+$", "" ]
+      }
+      mutate {
         rename => {
-          "blocked_target" => "[sshguard][blocked_target]"
+          "blocked_target" => "[source][ip]"
           "block_duration" => "[sshguard][block_duration]"
           "attack_count" => "[sshguard][attack_count]"
           "attack_timeframe" => "[sshguard][attack_timeframe]"
