@@ -98,6 +98,15 @@ SQUID %{IPORHOST:[client][ip]} %{NOTSPACE:[labels][request_status]}/%{NUMBER:[ht
 # Common base patterns
 LOGLEVEL ([Aa]lert|ALERT|[Tt]race|TRACE|[Dd]ebug|DEBUG|[Nn]otice|NOTICE|[Ii]nfo|INFO|[Ww]arn?(?:ing)?|WARN?(?:ING)?|[Ee]rr?(?:or)?|ERR?(?:OR)?|[Cc]rit?(?:ical)?|CRIT?(?:ICAL)?|[Ff]atal|FATAL|[Ss]evere|SEVERE|EMERG(?:ENCY)?|[Ee]merg(?:ency)?)
 
+# SSHGUARD - Brute-force attack detection and prevention
+# Format 1: Attack from "<ip>" on service <service> with danger <level>.
+# Example: Attack from "192.168.178.58" on service unknown service with danger 10.
+# Format 2: Blocking "<ip/cidr>" for <seconds> secs (<count> attacks in <time> secs, after <abuses> abuses over <time> secs.)
+# Example: Blocking "192.168.178.58/32" for 120 secs (3 attacks in 22 secs, after 1 abuses over 22 secs.)
+SSHGUARD (%{SSHGUARD_ATTACK}|%{SSHGUARD_BLOCKING})
+SSHGUARD_ATTACK Attack from "(?<source_ip>[^"]+)" on service %{DATA:sshguard_service} with danger %{INT:sshguard_danger:int}
+SSHGUARD_BLOCKING Blocking "(?<blocked_target>[^"]+)" for %{INT:block_duration:int} secs \((?<attack_count>\d+) attacks in (?<attack_timeframe>\d+) secs, after (?<abuse_count>\d+) abuses over (?<abuse_timeframe>\d+) secs\.\)
+
 # UNBOUND - DNS query/resolution logs
 # Matches three formats:
 # 1. With client IP: [PID:TID] level: client_ip domain. type class [response_code timing cache_flag size]
@@ -123,7 +132,7 @@ PF_IPv6_VAR %{WORD:type},%{WORD:option},%{WORD:Flags},%{WORD:Flags}
 PF_IPv6_ICMP
 
 # PF PROTOCOL
-PF_TCP_DATA %{INT:[source][port]},%{INT:[destination][port]},%{INT:[pf][transport][data_length]},(?<[pf][tcp][flags]>(\w*)?),(?<[pf][tcp][sequence_number]>(\d*)?):?\d*,(?<[pf][tcp][ack_number]>(\d*)?),(?<[pf][tcp][window]>(\d*)?),(?<[pf][tcp][urg]>(\w*)?),%{GREEDYDATA:[pf][tcp][options]}
+PF_TCP_DATA %{INT:[source][port]},%{INT:[destination][port]},%{INT:[pf][transport][data_length]},(?<[pf][tcp][flags]>(\w*)?),(?<[pf][tcp][sequence_number]>(\d*)?):?\d*,(?<[pf][tcp][ack_number]>(\d*)?),(?<[pf][tcp][window]>(\d*)?),(?<[pf][tcp][urg]>(\w)?),%{GREEDYDATA:[pf][tcp][options]}
 PF_UDP_DATA %{INT:[source][port]},%{INT:[destination][port]},%{INT:[pf][transport][data_length]}$
 PF_IGMP_DATA datalength=%{INT:[network][packets]}
 PF_ICMP_DATA %{PF_ICMP_TYPE}%{PF_ICMP_RESPONSE}

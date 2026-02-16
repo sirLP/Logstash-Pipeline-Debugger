@@ -60,3 +60,5 @@ Thumbs.db
 
 # Local config
 local_config/
+# Kibana templates and ILM policies
+kibana_templates/

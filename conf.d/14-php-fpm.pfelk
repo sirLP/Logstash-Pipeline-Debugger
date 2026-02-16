@@ -1,0 +1,62 @@
+# 14-php-fpm.pfelk
+################################################################################
+# Version: 24.09                                                               #
+# Required: False                                                              #
+# Description: Parses PHP-FPM web portal logs with authentication classification #
+#                                                                              #
+################################################################################
+#
+filter {
+  ### php-fpm ###
+  if [log][syslog][appname] =~ /^php-fpm/ {
+    mutate {
+      add_tag => "web_portal"
+      add_field => {
+        "[event][dataset]" => "pfelk.webportal"
+        "[data_stream][namespace]" => "firewall_services"
+        "[event][category]" => "web_application"
+      }
+    }
+    grok {
+      patterns_dir => [ "/etc/pfelk/patterns" ]
+      match => { "filter_message" => "%{PF_APP} %{PF_APP_DATA}" }
+    }
+    mutate {
+      lowercase => [ "[pf][app][action]" ]
+      rename => { "[pf][app][user]" => "[user][name]" }
+      rename => { "[pf][remote][ip]" => "[source][ip]" }
+      rename => { "[pf][app][page]" => "[url][path]" }
+    }
+    
+    # Classify authentication failures
+    if [pf][app][action] =~ /authentication error/ {
+      mutate {
+        add_tag => [ "authentication_failure", "auth_error" ]
+        add_field => { "[event][action]" => "authentication_failure" }
+        add_field => { "[event][outcome]" => "failure" }
+        add_field => { "[event][type]" => "authentication" }
+        add_field => { "[event][severity]" => 3 }
+      }
+    }
+    
+    # Classify authentication successes
+    if [pf][app][action] =~ /login/ {
+      mutate {
+        add_tag => "authentication_success"
+        add_field => { "[event][action]" => "authentication_success" }
+        add_field => { "[event][outcome]" => "success" }
+        add_field => { "[event][type]" => "authentication" }
+        add_field => { "[event][severity]" => 0 }
+      }
+    }
+    
+    # Default: generic web portal activity (if neither auth condition matched)
+    if ![event][action] {
+      mutate {
+        add_field => { "[event][action]" => "web_portal_activity" }
+        add_field => { "[event][type]" => "web_application" }
+        add_field => { "[event][severity]" => 1 }
+      }
+    }
+  }
+}

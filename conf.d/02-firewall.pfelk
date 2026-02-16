@@ -12,6 +12,7 @@ filter {
     mutate {
       add_tag => "firewall"
       add_field => { "[event][dataset]" => "pfelk.firewall" }
+      add_field => { "[data_stream][namespace]" => "firewall" }
       replace => { "[log][syslog][appname]" => "firewall" }
       copy => { "filter_message" => "pfelk_csv" }
     }
@@ -54,6 +55,9 @@ filter {
           "[source][ip]" =>	       "%{[pfelk_csv][18]}"
           "[destination][ip]" =>       "%{[pfelk_csv][19]}"
         }
+      }
+      mutate {
+        convert => { "[pf][ecn]" => "string" }
       }
       # [TCP]
       # [ECS compliant fields] source.port, destingation.port

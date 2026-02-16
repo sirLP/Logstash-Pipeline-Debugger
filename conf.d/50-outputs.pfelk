@@ -1,53 +1,239 @@
 # 50-outputs.pfelk
 ################################################################################
-# Version: 25.12a                                                              #
-# Required: True                                                               #
-# Description: Sends enriched logs to Elasticsearch.                           #
-#                                                                              #
+# Version: 25.12b
+# Required: True
+# Description: Routes enriched logs to Elasticsearch data streams based on type.
+#              Uses conditional outputs to avoid field interpolation issues.
 ################################################################################
-#
 filter {
-  if [log][syslog][appname] == "captiveportal" {
-    mutate { add_field => { "[data_stream][namespace]" => "captiveportal" } }
-  } else if [log][syslog][appname] == "dhcp" {
-    mutate { add_field => { "[data_stream][namespace]" => "dhcp" } }
-  } else if [log][syslog][appname] == "firewall" {
-    mutate { add_field => { "[data_stream][namespace]" => "firewall" } }
-  } else if "bind9" in [tags] or "dpinger" in [tags] or "ntpd" in [tags] or "web_portal" in [tags] {
-    mutate { add_field => { "[data_stream][namespace]" => "firewall_processes" } }
-  } else if [log][syslog][appname] == "haproxy" {
-    mutate { add_field => { "[data_stream][namespace]" => "haproxy" } }
-  } else if [log][syslog][appname] == "kea-dhcp" {
-    mutate { add_field => { "[data_stream][namespace]" => "kea-dhcp" } }
-  } else if [log][syslog][appname] == "nginx" {
-    mutate { add_field => { "[data_stream][namespace]" => "nginx" } }
-  } else if [log][syslog][appname] == "openvpn" {
-    mutate { add_field => { "[data_stream][namespace]" => "openvpn" } }
-  } else if [log][syslog][appname] == "unbound" {
-    mutate { add_field => { "[data_stream][namespace]" => "unbound" } }
-  } else if [log][syslog][appname] == "suricata" {
-    mutate { add_field => { "[data_stream][namespace]" => "suricata" } }
-  } else if [log][syslog][appname] == "snort" {
-    mutate { add_field => { "[data_stream][namespace]" => "snort" } }
-  } else if [log][syslog][appname] == "squid" {
-    mutate { add_field => { "[data_stream][namespace]" => "squid" } }
-  } else {
-    mutate { add_field => { "[data_stream][namespace]" => "unknown" } }
+  ### Ensure all logs have dataset and namespace assignments ###
+  if ![event][dataset] {
+    mutate {
+      add_field => { "[event][dataset]" => "pfelk.unknown" }
+      add_tag => "missing_dataset"
+    }
   }
-}
-output {
-  elasticsearch {
-    data_stream => "true"
-    data_stream_type => "logs"
-    data_stream_dataset => "pfelk"
-    # Use the metadata variable we just created:
-    data_stream_namespace => "%{[@metadata][pfelk_namespace]}"
 
-    hosts => ["https://localhost:9200"]
-    user => "elastic"
-    password => "C0m@ch1o"
-    ssl_enabled => true
-    ssl_verification_mode => "none" 
-    # ssl_certificate_authorities => ["/etc/logstash/config/certs/http_ca.crt"]
+  ### Assign data_stream namespace based on log type ###
+  if [log][syslog][appname] == "captiveportal" {
+    mutate { replace => { "[data_stream][namespace]" => "captiveportal" } }
+  } else if [log][syslog][appname] == "dhcp" {
+    mutate { replace => { "[data_stream][namespace]" => "dhcp" } }
+  } else if [log][syslog][appname] == "firewall" {
+    mutate { replace => { "[data_stream][namespace]" => "firewall" } }
+  } else if "dpinger" in [tags] {
+    mutate { replace => { "[data_stream][namespace]" => "firewall_services" } }
+  } else if "bind9" in [tags] {
+    mutate { replace => { "[data_stream][namespace]" => "firewall_services" } }
+  } else if "ntpd" in [tags] {
+    mutate { replace => { "[data_stream][namespace]" => "firewall_services" } }
+  } else if "web_portal" in [tags] {
+    mutate { replace => { "[data_stream][namespace]" => "firewall_services" } }
+  } else if [log][syslog][appname] == "haproxy" {
+    mutate { replace => { "[data_stream][namespace]" => "haproxy" } }
+  } else if [log][syslog][appname] =~ /^kea-dhcp/ {
+    mutate { replace => { "[data_stream][namespace]" => "kea-dhcp" } }
+  } else if [log][syslog][appname] == "nginx" {
+    mutate { replace => { "[data_stream][namespace]" => "nginx" } }
+  } else if [log][syslog][appname] == "openvpn" {
+    mutate { replace => { "[data_stream][namespace]" => "openvpn" } }
+  } else if [log][syslog][appname] == "unbound" {
+    mutate { replace => { "[data_stream][namespace]" => "unbound" } }
+  } else if [log][syslog][appname] == "suricata" {
+    mutate { replace => { "[data_stream][namespace]" => "suricata" } }
+  } else if [log][syslog][appname] == "snort" {
+    mutate { replace => { "[data_stream][namespace]" => "snort" } }
+  } else if [log][syslog][appname] == "squid" {
+    mutate { replace => { "[data_stream][namespace]" => "squid" } }
+  } else if [log][syslog][appname] == "sshguard" {
+    mutate { replace => { "[data_stream][namespace]" => "sshguard" } }
+  } else {
+    mutate { replace => { "[data_stream][namespace]" => "generic" } }
   }
 }
+
+### Conditional outputs by dataset type ###
+### This avoids field interpolation issues by using hardcoded values per output
+
+output {
+  # Firewall logs
+  if [event][dataset] == "pfelk.firewall" {
+    elasticsearch {
+      data_stream => "true"
+      data_stream_type => "logs"
+      data_stream_dataset => "pfelk.firewall"
+      data_stream_namespace => "firewall"
+      hosts => ["https://localhost:9200"]
+      user => "elastic"
+      password => "C0m@ch1o"
+      ssl_enabled => true
+      ssl_verification_mode => "none"
+    }
+  }
+  
+  # Web Portal logs
+  else if [event][dataset] == "pfelk.webportal" {
+    elasticsearch {
+      data_stream => "true"
+      data_stream_type => "logs"
+      data_stream_dataset => "pfelk.webportal"
+      data_stream_namespace => "firewall_services"
+      hosts => ["https://localhost:9200"]
+      user => "elastic"
+      password => "C0m@ch1o"
+      ssl_enabled => true
+      ssl_verification_mode => "none"
+    }
+  }
+  
+  # DNS/Unbound logs
+  else if [event][dataset] == "pfelk.unbound" {
+    elasticsearch {
+      data_stream => "true"
+      data_stream_type => "logs"
+      data_stream_dataset => "pfelk.unbound"
+      data_stream_namespace => "unbound"
+      hosts => ["https://localhost:9200"]
+      user => "elastic"
+      password => "C0m@ch1o"
+      ssl_enabled => true
+      ssl_verification_mode => "none"
+    }
+  }
+  
+  # DHCP logs
+  else if [event][dataset] == "pfelk.dhcp" or [log][syslog][appname] == "dhcp" {
+    elasticsearch {
+      data_stream => "true"
+      data_stream_type => "logs"
+      data_stream_dataset => "pfelk.dhcp"
+      data_stream_namespace => "dhcp"
+      hosts => ["https://localhost:9200"]
+      user => "elastic"
+      password => "C0m@ch1o"
+      ssl_enabled => true
+      ssl_verification_mode => "none"
+    }
+  }
+  
+  # Kea-DHCP logs
+  else if [event][dataset] == "pfelk.kea-dhcp" {
+    elasticsearch {
+      data_stream => "true"
+      data_stream_type => "logs"
+      data_stream_dataset => "pfelk.kea-dhcp"
+      data_stream_namespace => "kea-dhcp"
+      hosts => ["https://localhost:9200"]
+      user => "elastic"
+      password => "C0m@ch1o"
+      ssl_enabled => true
+      ssl_verification_mode => "none"
+    }
+  }
+  
+  # Suricata logs
+  else if [event][dataset] == "pfelk.suricata" {
+    elasticsearch {
+      data_stream => "true"
+      data_stream_type => "logs"
+      data_stream_dataset => "pfelk.suricata"
+      data_stream_namespace => "suricata"
+      hosts => ["https://localhost:9200"]
+      user => "elastic"
+      password => "C0m@ch1o"
+      ssl_enabled => true
+      ssl_verification_mode => "none"
+    }
+  }
+  
+  # HAProxy logs
+  else if [event][dataset] == "pfelk.haproxy" {
+    elasticsearch {
+      data_stream => "true"
+      data_stream_type => "logs"
+      data_stream_dataset => "pfelk.haproxy"
+      data_stream_namespace => "haproxy"
+      hosts => ["https://localhost:9200"]
+      user => "elastic"
+      password => "C0m@ch1o"
+      ssl_enabled => true
+      ssl_verification_mode => "none"
+    }
+  }
+  
+  # Nginx logs
+  else if [event][dataset] == "pfelk.nginx" {
+    elasticsearch {
+      data_stream => "true"
+      data_stream_type => "logs"
+      data_stream_dataset => "pfelk.nginx"
+      data_stream_namespace => "nginx"
+      hosts => ["https://localhost:9200"]
+      user => "elastic"
+      password => "C0m@ch1o"
+      ssl_enabled => true
+      ssl_verification_mode => "none"
+    }
+  }
+  
+  # OpenVPN logs
+  else if [event][dataset] == "pfelk.openvpn" {
+    elasticsearch {
+      data_stream => "true"
+      data_stream_type => "logs"
+      data_stream_dataset => "pfelk.openvpn"
+      data_stream_namespace => "openvpn"
+      hosts => ["https://localhost:9200"]
+      user => "elastic"
+      password => "C0m@ch1o"
+      ssl_enabled => true
+      ssl_verification_mode => "none"
+    }
+  }
+  
+  # SSH Guard logs
+  else if [event][dataset] == "pfelk.sshguard" {
+    elasticsearch {
+      data_stream => "true"
+      data_stream_type => "logs"
+      data_stream_dataset => "pfelk.sshguard"
+      data_stream_namespace => "sshguard"
+      hosts => ["https://localhost:9200"]
+      user => "elastic"
+      password => "C0m@ch1o"
+      ssl_enabled => true
+      ssl_verification_mode => "none"
+    }
+  }
+  
+  # Captive Portal logs
+  else if [log][syslog][appname] == "captiveportal" {
+    elasticsearch {
+      data_stream => "true"
+      data_stream_type => "logs"
+      data_stream_dataset => "pfelk.captiveportal"
+      data_stream_namespace => "captiveportal"
+      hosts => ["https://localhost:9200"]
+      user => "elastic"
+      password => "C0m@ch1o"
+      ssl_enabled => true
+      ssl_verification_mode => "none"
+    }
+  }
+  
+  # Fallback for unknown types
+  else {
+    elasticsearch {
+      data_stream => "true"
+      data_stream_type => "logs"
+      data_stream_dataset => "pfelk.unknown"
+      data_stream_namespace => "generic"
+      hosts => ["https://localhost:9200"]
+      user => "elastic"
+      password => "C0m@ch1o"
+      ssl_enabled => true
+      ssl_verification_mode => "none"
+    }
+  }
+}
+

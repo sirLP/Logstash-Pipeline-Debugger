@@ -1,0 +1,49 @@
+# 18-sshguard.pfelk
+################################################################################
+# Version: 24.09                                                               #
+# Required: False                                                              #
+# Description: Parses SSH Guard brute-force detection and blocking logs        #
+#                                                                              #
+################################################################################
+#
+filter {
+  ### sshguard ###
+  if [log][syslog][appname] =~ /^sshguard/ {
+    mutate {
+      add_tag => "sshguard"
+      add_field => { "[event][dataset]" => "pfelk.sshguard" }
+      add_field => { "[data_stream][namespace]" => "sshguard" }
+      add_field => { "[event][category]" => "intrusion_detection" }
+    }
+    grok {
+      patterns_dir => [ "/etc/pfelk/patterns" ]
+      match => [ "filter_message", "%{SSHGUARD}" ]
+    }
+    # Conditional logic to distinguish between attack and blocking
+    if [filter_message] =~ /^Blocking/ {
+      mutate {
+        add_field => { "[event][action]" => "blocking" }
+        add_field => { "[event][type]" => "denied" }
+        rename => {
+          "blocked_target" => "[sshguard][blocked_target]"
+          "block_duration" => "[sshguard][block_duration]"
+          "attack_count" => "[sshguard][attack_count]"
+          "attack_timeframe" => "[sshguard][attack_timeframe]"
+          "abuse_count" => "[sshguard][abuse_count]"
+          "abuse_timeframe" => "[sshguard][abuse_timeframe]"
+        }
+      }
+    }
+    if [filter_message] =~ /^Attack from/ {
+      mutate {
+        add_field => { "[event][action]" => "attack" }
+        add_field => { "[event][type]" => "allowed" }
+        rename => {
+          "source_ip" => "[source][ip]"
+          "sshguard_service" => "[sshguard][service]"
+          "sshguard_danger" => "[sshguard][danger]"
+        }
+      }
+    }
+  }
+}
