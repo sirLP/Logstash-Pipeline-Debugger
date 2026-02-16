@@ -109,20 +109,7 @@ filter {
     mutate {
       add_tag => "ntpd"
       add_field => { "[event][dataset]" => "pfelk.ntpd" }
-    }
-  }
-  ### php-fpm ###
-  if [log][syslog][appname] =~ /^php-fpm/ {
-    mutate {
-      add_tag => "web_portal"
-      add_field => { "[event][dataset]" => "pfelk.webportal" }
-    }
-    grok {
-      patterns_dir => [ "/etc/pfelk/patterns" ]
-      match => { "filter_message" => "%{PF_APP} %{PF_APP_DATA}" }
-    }
-    mutate {
-      lowercase => [ "[pf][app][action]" ]
+      add_field => { "[data_stream][namespace]" => "firewall_services" }
     }
   }
   ### snort ###
@@ -137,48 +124,6 @@ filter {
     grok {
       patterns_dir => [ "/etc/pfelk/patterns" ]
       match => [ "filter_message", "%{SNORT}" ]
-    }
-  }
-  ### suricata ###
-  if [log][syslog][appname] =~ /^suricata$/ {
-    if [filter_message] =~ /^{.*}$/ {
-      json {
-        source => "filter_message"
-        target => "[suricata][eve]"
-        add_tag => "suricata_json"
-      }
-    }
-    if [suricata][eve][src_ip] and ![source][ip] {
-      mutate {
-        add_field => { "[source][ip]" => "%{[suricata][eve][src_ip]}" }
-      }
-    }
-    if [suricata][eve][dest_ip] and ![destination][ip] {
-      mutate {
-        add_field => { "[destination][ip]" => "%{[suricata][eve][dest_ip]}" }
-      }
-    }
-    if [suricata][eve][src_port] and ![source][port] {
-      mutate {
-        add_field => { "[source][port]" => "%{[suricata][eve][src_port]}" }
-      }
-    }
-    if [suricata][eve][dest_port] and ![destination][port] {
-      mutate {
-        add_field => { "[destination][port]" => "%{[suricata][eve][dest_port]}" }
-        add_field => { "[threatintel][indicator][ip]" => "%{[source][ip]} %{[suricata][eve][http][url]}" }
-      }
-    }
-    if "suricata_json" not in [tags] {
-      grok {
-        patterns_dir => [ "/etc/pfelk/patterns" ]
-        match => [ "filter_message", "%{SURICATA}" ]
-      }
-    }
-    mutate {
-      remove_tag => "suricata_json"
-      add_tag => "suricata"
-      add_field => { "[event][dataset]" => "pfelk.suricata" }
     }
   }
   ### squid ###
