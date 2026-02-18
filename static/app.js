@@ -1877,26 +1877,10 @@ function displayPcapLogs(logs, filename) {
     const card = document.getElementById('pcap-logs-card');
     const infoDiv = card.querySelector('.pcap-info');
     const listDiv = document.getElementById('pcap-logs-list');
-
-    const netflowExpanded = logs.filter(log => log.pcap_expansion && log.pcap_expansion.mode === 'netflow_packet_to_records');
-    const packetFlowTotals = new Set(
-        netflowExpanded.map(log => {
-            const src = log.src_ip || '?';
-            const dst = log.dst_ip || '?';
-            const ts = log.timestamp || '?';
-            const total = log.pcap_expansion?.flow_total || 0;
-            return `${src}|${dst}|${ts}|${total}`;
-        })
-    );
-    const expandedPacketCount = packetFlowTotals.size;
-    const expandedFlowCount = netflowExpanded.length;
-    const expansionSummary = expandedFlowCount > 0
-        ? `<br><strong>NetFlow expansion:</strong> ${expandedPacketCount} packet${expandedPacketCount === 1 ? '' : 's'} → ${expandedFlowCount} flow record${expandedFlowCount === 1 ? '' : 's'}`
-        : '';
     
     infoDiv.innerHTML = `
         <strong>File:</strong> ${escapeHtml(filename)}<br>
-        <strong>Logs found:</strong> ${logs.length}${expansionSummary}
+        <strong>Logs found:</strong> ${logs.length}
     `;
     
     listDiv.innerHTML = '';
@@ -1904,11 +1888,6 @@ function displayPcapLogs(logs, filename) {
     logs.forEach((log, index) => {
         const logItem = document.createElement('div');
         logItem.className = 'pcap-log-item';
-
-        const expansion = log.pcap_expansion || null;
-        const expansionHint = expansion && expansion.mode === 'netflow_packet_to_records'
-            ? `<div class="pcap-expansion-hint" style="font-size: 0.85em; color: #667eea; margin-top: 4px;">expanded from one NetFlow packet (${expansion.flow_index}/${expansion.flow_total})</div>`
-            : '';
         
         // Detect multiple messages in payload (split by newline or RFC5424 pattern)
         const messages = detectMultipleMessages(log.payload);
@@ -1920,7 +1899,6 @@ function displayPcapLogs(logs, filename) {
                 <span>${log.timestamp || 'No timestamp'}</span>
                 <span>${log.src_ip || ''}${log.src_ip && log.dst_ip ? ' → ' : ''}${log.dst_ip || ''}</span>
             </div>
-            ${expansionHint}
             <div class="pcap-log-content">${escapeHtml(log.payload.length > 200 ? log.payload.substring(0, 200) + '...' : log.payload)}</div>
         `;
         
@@ -2071,11 +2049,6 @@ function showSummaryModal(finalEvent) {
 function detectEventLogType(event) {
     const appname = event['log']?.['syslog']?.['appname'] || '';
     const tags = event['tags'] || [];
-
-    // Check for NetFlow/IPFIX
-    if (appname === 'netflow' || tags.includes('netflow') || event['netflow'] || event['event']?.['dataset'] === 'pfelk.netflow') {
-        return 'netflow';
-    }
     
     // Check for Suricata IDS
     if (appname === 'suricata' || tags.includes('suricata') || event['suricata']) {
@@ -2154,9 +2127,6 @@ function generateSummaryContent(finalEvent, logType) {
     let sections = '';
     
     switch (logType) {
-        case 'netflow':
-            sections = generateNetflowSummary(finalEvent, common);
-            break;
         case 'firewall':
             sections = generateFirewallSummary(finalEvent, common);
             break;
@@ -2184,102 +2154,6 @@ function generateSummaryContent(finalEvent, logType) {
     }
     
     return rawMessageSection + sections + generateTagsSection(common.tags);
-}
-
-/**
- * Generate NetFlow summary
- */
-function generateNetflowSummary(event, common) {
-    const source = event['source'] || {};
-    const destination = event['destination'] || {};
-    const network = event['network'] || {};
-    const netflow = event['netflow'] || {};
-
-    const protocolNumber = netflow['protocol'] ?? network['iana_number'] ?? 'N/A';
-    const protocolMap = {
-        1: 'ICMP',
-        6: 'TCP',
-        17: 'UDP',
-        47: 'GRE',
-        50: 'ESP',
-        51: 'AH'
-    };
-    const protocolName = protocolMap[Number(protocolNumber)] || 'Unknown';
-
-    const startSeconds = netflow['flowStartSeconds'];
-    const endSeconds = netflow['flowEndSeconds'];
-    const startTime = Number.isFinite(Number(startSeconds)) ? new Date(Number(startSeconds) * 1000).toISOString() : 'N/A';
-    const endTime = Number.isFinite(Number(endSeconds)) ? new Date(Number(endSeconds) * 1000).toISOString() : 'N/A';
-
-    const flowMatch = (event['event']?.['original'] || '').match(/flow=(\d+)\/(\d+)/i);
-    const flowIndex = flowMatch ? flowMatch[1] : null;
-    const flowTotal = flowMatch ? flowMatch[2] : (netflow['flow_records'] || null);
-
-    return `
-        <div class="summary-grid">
-            <div class="summary-section">
-                <h3>🌐 NetFlow Record</h3>
-                ${flowIndex && flowTotal ? `
-                <div class="summary-item">
-                    <span class="summary-label">Flow Index:</span>
-                    <span class="summary-value">${escapeHtml(String(flowIndex))}/${escapeHtml(String(flowTotal))}</span>
-                </div>
-                ` : ''}
-                <div class="summary-item">
-                    <span class="summary-label">Source:</span>
-                    <span class="summary-value ip">${escapeHtml(source['ip'] || netflow['ipv4_src_addr'] || netflow['ipv6_src_addr'] || 'N/A')}</span>
-                </div>
-                <div class="summary-item">
-                    <span class="summary-label">Source Port:</span>
-                    <span class="summary-value port">${escapeHtml(String(source['port'] ?? netflow['l4_src_port'] ?? 'N/A'))}</span>
-                </div>
-                <div class="summary-item">
-                    <span class="summary-label">Destination:</span>
-                    <span class="summary-value ip">${escapeHtml(destination['ip'] || netflow['ipv4_dst_addr'] || netflow['ipv6_dst_addr'] || 'N/A')}</span>
-                </div>
-                <div class="summary-item">
-                    <span class="summary-label">Destination Port:</span>
-                    <span class="summary-value port">${escapeHtml(String(destination['port'] ?? netflow['l4_dst_port'] ?? 'N/A'))}</span>
-                </div>
-                <div class="summary-item">
-                    <span class="summary-label">Protocol:</span>
-                    <span class="summary-value">${escapeHtml(protocolName)} (${escapeHtml(String(protocolNumber))})</span>
-                </div>
-            </div>
-
-            <div class="summary-section">
-                <h3>📊 Flow Counters</h3>
-                <div class="summary-item">
-                    <span class="summary-label">Bytes:</span>
-                    <span class="summary-value">${escapeHtml(String(network['bytes'] ?? netflow['in_bytes'] ?? netflow['IN_BYTES'] ?? 'N/A'))}</span>
-                </div>
-                <div class="summary-item">
-                    <span class="summary-label">Packets:</span>
-                    <span class="summary-value">${escapeHtml(String(network['packets'] ?? netflow['in_pkts'] ?? netflow['IN_PKTS'] ?? 'N/A'))}</span>
-                </div>
-                <div class="summary-item">
-                    <span class="summary-label">Template ID:</span>
-                    <span class="summary-value">${escapeHtml(String(netflow['template_id'] ?? 'N/A'))}</span>
-                </div>
-                <div class="summary-item">
-                    <span class="summary-label">NetFlow Version:</span>
-                    <span class="summary-value">${escapeHtml(String(netflow['version'] ?? 'N/A'))}</span>
-                </div>
-                <div class="summary-item">
-                    <span class="summary-label">Flow Start:</span>
-                    <span class="summary-value">${escapeHtml(startTime)}</span>
-                </div>
-                <div class="summary-item">
-                    <span class="summary-label">Flow End:</span>
-                    <span class="summary-value">${escapeHtml(endTime)}</span>
-                </div>
-                <div class="summary-item">
-                    <span class="summary-label">Exporter Host:</span>
-                    <span class="summary-value">${escapeHtml(common.hostname)}</span>
-                </div>
-            </div>
-        </div>
-    `;
 }
 
 /**

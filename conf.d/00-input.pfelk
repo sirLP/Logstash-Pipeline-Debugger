@@ -22,14 +22,6 @@ input {
     codec => plain { charset => "UTF-8" }
     tags => ["pfelk", "unbound_raw"]
   }
-
-  udp {
-    id => "pfelk-netflow-udp"
-    port => 5143
-    type => "netflow"
-    codec => netflow
-    tags => ["pfelk", "netflow"]
-  }
 }
 
 filter {
@@ -69,17 +61,6 @@ filter {
         "[event][dataset]" => "pfelk.unbound"
         "[data_stream][dataset]" => "pfelk.unbound"
         "[data_stream][namespace]" => "unbound"
-      }
-    }
-  }
-  else if [type] == "netflow" {
-    mutate {
-      add_field => { "[@metadata][pfelk_namespace]" => "netflow" }
-      replace => {
-        "[log][syslog][appname]" => "netflow"
-        "[event][dataset]" => "pfelk.netflow"
-        "[data_stream][dataset]" => "pfelk.netflow"
-        "[data_stream][namespace]" => "netflow"
       }
     }
   }
