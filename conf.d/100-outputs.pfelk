@@ -1,0 +1,40 @@
+# 50-outputs.pfelk
+################################################################################
+# Version: 26.02
+# Required: True
+# Description: Routes enriched logs to Elasticsearch data streams.
+#              Dataset and namespace values are set in individual filter files.
+################################################################################
+
+output {
+  # Primary modular output: dataset/namespace come from each parser config
+  if [event][dataset] and [data_stream][namespace] {
+    elasticsearch {
+      data_stream => "true"
+      data_stream_type => "logs"
+      data_stream_dataset => "%{[event][dataset]}"
+      data_stream_namespace => "%{[data_stream][namespace]}"
+      hosts => ["https://localhost:9200"]
+      user => "elastic"
+      password => "C0m@ch1o"
+      ssl_enabled => true
+      ssl_verification_mode => "none"
+    }
+  }
+
+  # Fallback for events that were not assigned dataset/namespace
+  else {
+    elasticsearch {
+      data_stream => "true"
+      data_stream_type => "logs"
+      data_stream_dataset => "pfelk.unknown"
+      data_stream_namespace => "generic"
+      hosts => ["https://localhost:9200"]
+      user => "elastic"
+      password => "C0m@ch1o"
+      ssl_enabled => true
+      ssl_verification_mode => "none"
+    }
+  }
+}
+

@@ -22,6 +22,14 @@ input {
     codec => plain { charset => "UTF-8" }
     tags => ["pfelk", "unbound_raw"]
   }
+
+  udp {
+    id => "pfelk-netflow-udp"
+    port => 5143
+    type => "netflow"
+    codec => netflow
+    tags => ["pfelk", "netflow"]
+  }
 }
 
 filter {
@@ -29,7 +37,11 @@ filter {
     grok { match => { "message" => "(?<filter_message>\{.*\".*\":.*\})" } }
     mutate { 
       add_field => { "[@metadata][pfelk_namespace]" => "suricata" }
-      replace => { "[log][syslog][appname]" => "suricata" }
+      replace => {
+        "[log][syslog][appname]" => "suricata"
+        "[event][dataset]" => "pfelk.suricata"
+        "[data_stream][namespace]" => "suricata"
+      }
     }
     if [filter_message] =~ /^\{/ {
       json { source => "filter_message" target => "[suricata][eve]" add_tag => "suricata_json" }
@@ -51,7 +63,21 @@ filter {
     mutate { 
       strip => ["filter_message"]
       add_field => { "[@metadata][pfelk_namespace]" => "unbound" }
-      replace => { "[log][syslog][appname]" => "unbound" }
+      replace => {
+        "[log][syslog][appname]" => "unbound"
+        "[event][dataset]" => "pfelk.unbound"
+        "[data_stream][namespace]" => "unbound"
+      }
+    }
+  }
+  else if [type] == "netflow" {
+    mutate {
+      add_field => { "[@metadata][pfelk_namespace]" => "netflow" }
+      replace => {
+        "[log][syslog][appname]" => "netflow"
+        "[event][dataset]" => "pfelk.netflow"
+        "[data_stream][namespace]" => "netflow"
+      }
     }
   }
   else {
@@ -61,7 +87,11 @@ filter {
     }
     mutate {
       add_field => { "[@metadata][pfelk_namespace]" => "firewall" }
-      replace => { "type" => "firewall" }
+      replace => {
+        "type" => "firewall"
+        "[event][dataset]" => "pfelk.firewall"
+        "[data_stream][namespace]" => "firewall"
+      }
     }
   }
 }

@@ -9,6 +9,13 @@
 #
 # 
 filter {
+### Tag events that will hit fallback output ###
+  if ![event][dataset] or ![data_stream][namespace] {
+    mutate {
+      add_tag => ["pfelk_routing_fallback"]
+    }
+  }
+
 ### Drops logs based on priority - amend as desired ###
 #  if [log][syslog][priority] in ["78", "46", "45", "43"] {
 #	drop { }

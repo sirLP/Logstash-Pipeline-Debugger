@@ -1,0 +1,31 @@
+filter {
+  if [source][ip] {
+    mutate {
+      copy => { "[source][ip]" => "[source][domain]" }
+    }
+    dns {
+      nameserver => [ "127.0.0.1" ]
+      reverse => [ "[source][domain]" ]
+      action => "replace"
+      hit_cache_size => 8000
+      hit_cache_ttl => 900
+      failed_cache_size => 1000
+      failed_cache_ttl => 300
+    }
+  }
+  
+  if [destination][ip] {
+    mutate {
+      copy => { "[destination][ip]" => "[destination][domain]" }
+    }
+    dns {
+      nameserver => [ "127.0.0.1" ]
+      reverse => [ "[destination][domain]" ]
+      action => "replace"
+      hit_cache_size => 8000
+      hit_cache_ttl => 900 
+      failed_cache_size => 1000
+      failed_cache_ttl => 300
+    }
+  }
+}
