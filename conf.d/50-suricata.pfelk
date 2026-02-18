@@ -47,6 +47,7 @@ filter {
       remove_tag => "suricata_json"
       add_tag => "suricata"
       add_field => { "[event][dataset]" => "pfelk.suricata" }
+      add_field => { "[data_stream][dataset]" => "pfelk.suricata" }
       add_field => { "[data_stream][namespace]" => "suricata" }
     }
   }

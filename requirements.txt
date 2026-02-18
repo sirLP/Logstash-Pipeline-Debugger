@@ -2,3 +2,4 @@ Flask==3.0.0
 Werkzeug==3.0.1
 pygrok==1.0.0
 python-dateutil==2.8.2
+scapy==2.5.0

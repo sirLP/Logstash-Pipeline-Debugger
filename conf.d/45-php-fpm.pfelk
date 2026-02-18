@@ -13,6 +13,7 @@ filter {
       add_tag => "web_portal"
       add_field => {
         "[event][dataset]" => "pfelk.webportal"
+        "[data_stream][dataset]" => "pfelk.webportal"
         "[data_stream][namespace]" => "firewall_services"
         "[event][category]" => "web_application"
       }

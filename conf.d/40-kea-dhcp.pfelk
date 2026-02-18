@@ -13,6 +13,7 @@ filter {
     mutate {
       add_tag => [ "kea-dhcp", "dhcp4" ]
       add_field => { "[event][dataset]" => "pfelk.kea-dhcp4" }
+      add_field => { "[data_stream][dataset]" => "pfelk.kea-dhcp4" }
       add_field => { "[data_stream][namespace]" => "kea-dhcp" }
       replace => { "[log][syslog][appname]" => "kea-dhcp" }
     }
@@ -27,6 +28,7 @@ filter {
     mutate {
       add_tag => [ "kea-dhcp", "dhcp6" ]
       add_field => { "[event][dataset]" => "pfelk.kea-dhcp6" }
+      add_field => { "[data_stream][dataset]" => "pfelk.kea-dhcp6" }
       add_field => { "[data_stream][namespace]" => "kea-dhcp" }
       replace => { "[log][syslog][appname]" => "kea-dhcp" }
     }

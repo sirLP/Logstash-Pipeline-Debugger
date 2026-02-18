@@ -11,6 +11,7 @@ filter {
       add_tag => "netflow"
       replace => {
         "[event][dataset]" => "pfelk.netflow"
+        "[data_stream][dataset]" => "pfelk.netflow"
         "[data_stream][namespace]" => "netflow"
         "[event][category]" => "network"
         "[event][kind]" => "event"

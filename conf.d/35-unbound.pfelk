@@ -11,7 +11,7 @@ filter {
   if [log][syslog][appname] =~ /^unbound/ {
     mutate {
       add_tag => "unbound"
-      replace => { "[event][dataset]" => "pfelk.unbound" "[data_stream][namespace]" => "unbound" }
+      replace => { "[event][dataset]" => "pfelk.unbound" "[data_stream][dataset]" => "pfelk.unbound" "[data_stream][namespace]" => "unbound" }
     }
     
     # Parse DNSSEC validation messages
@@ -107,7 +107,7 @@ filter {
       
       # Ensure dataset is set even if earlier steps fail
       if "unbound" in [tags] {
-        mutate { replace => { "[event][dataset]" => "pfelk.unbound" } }
+        mutate { replace => { "[event][dataset]" => "pfelk.unbound" "[data_stream][dataset]" => "pfelk.unbound" } }
       }
       }
     }

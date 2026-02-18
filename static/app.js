@@ -6,6 +6,7 @@
 let currentConfig = null;
 let configChain = []; // Array to store multiple configs
 let inputStreams = []; // Array to store input stream configurations
+let selectedPcapContext = null;
 
 // Store last parse result for export
 let lastParseResult = null;
@@ -605,8 +606,13 @@ async function handleParse() {
         // Auto-detect log type from content
         const detected = autoDetectLogType(logEntry);
         let inputStreamInfo = null;
+
+        const hasMatchingPcapContext = selectedPcapContext && selectedPcapContext.payload === logEntry;
         
-        if (detected) {
+        if (hasMatchingPcapContext && selectedPcapContext.inputStream) {
+            inputStreamInfo = selectedPcapContext.inputStream;
+            console.log('Using PCAP-derived input stream:', inputStreamInfo.name || inputStreamInfo.type);
+        } else if (detected) {
             inputStreamInfo = {
                 name: detected.name,
                 type: detected.type,
@@ -623,6 +629,10 @@ async function handleParse() {
             configs: configChain.map(c => ({ name: c.name, content: c.content })),
             inputStream: inputStreamInfo
         };
+
+        if (hasMatchingPcapContext && selectedPcapContext.eventSeed) {
+            payload.eventSeed = selectedPcapContext.eventSeed;
+        }
 
         // Show loading state
         parseBtn.disabled = true;
@@ -1867,10 +1877,26 @@ function displayPcapLogs(logs, filename) {
     const card = document.getElementById('pcap-logs-card');
     const infoDiv = card.querySelector('.pcap-info');
     const listDiv = document.getElementById('pcap-logs-list');
+
+    const netflowExpanded = logs.filter(log => log.pcap_expansion && log.pcap_expansion.mode === 'netflow_packet_to_records');
+    const packetFlowTotals = new Set(
+        netflowExpanded.map(log => {
+            const src = log.src_ip || '?';
+            const dst = log.dst_ip || '?';
+            const ts = log.timestamp || '?';
+            const total = log.pcap_expansion?.flow_total || 0;
+            return `${src}|${dst}|${ts}|${total}`;
+        })
+    );
+    const expandedPacketCount = packetFlowTotals.size;
+    const expandedFlowCount = netflowExpanded.length;
+    const expansionSummary = expandedFlowCount > 0
+        ? `<br><strong>NetFlow expansion:</strong> ${expandedPacketCount} packet${expandedPacketCount === 1 ? '' : 's'} → ${expandedFlowCount} flow record${expandedFlowCount === 1 ? '' : 's'}`
+        : '';
     
     infoDiv.innerHTML = `
         <strong>File:</strong> ${escapeHtml(filename)}<br>
-        <strong>Logs found:</strong> ${logs.length}
+        <strong>Logs found:</strong> ${logs.length}${expansionSummary}
     `;
     
     listDiv.innerHTML = '';
@@ -1878,6 +1904,11 @@ function displayPcapLogs(logs, filename) {
     logs.forEach((log, index) => {
         const logItem = document.createElement('div');
         logItem.className = 'pcap-log-item';
+
+        const expansion = log.pcap_expansion || null;
+        const expansionHint = expansion && expansion.mode === 'netflow_packet_to_records'
+            ? `<div class="pcap-expansion-hint" style="font-size: 0.85em; color: #667eea; margin-top: 4px;">expanded from one NetFlow packet (${expansion.flow_index}/${expansion.flow_total})</div>`
+            : '';
         
         // Detect multiple messages in payload (split by newline or RFC5424 pattern)
         const messages = detectMultipleMessages(log.payload);
@@ -1889,6 +1920,7 @@ function displayPcapLogs(logs, filename) {
                 <span>${log.timestamp || 'No timestamp'}</span>
                 <span>${log.src_ip || ''}${log.src_ip && log.dst_ip ? ' → ' : ''}${log.dst_ip || ''}</span>
             </div>
+            ${expansionHint}
             <div class="pcap-log-content">${escapeHtml(log.payload.length > 200 ? log.payload.substring(0, 200) + '...' : log.payload)}</div>
         `;
         
@@ -1903,10 +1935,16 @@ function displayPcapLogs(logs, filename) {
             if (hasMultiple) {
                 // Show message selection modal
                 showMessageSelectionModal(messages);
+                selectedPcapContext = null;
             } else {
                 // Fill the log entry textarea directly
                 const logEntryInput = document.getElementById('log-entry');
                 logEntryInput.value = log.payload;
+                selectedPcapContext = {
+                    payload: log.payload,
+                    inputStream: log.input_stream || null,
+                    eventSeed: log.event || null
+                };
                 // Update auto-detected type
                 updateAutoDetectedType(log.payload);
                 // Scroll to the textarea

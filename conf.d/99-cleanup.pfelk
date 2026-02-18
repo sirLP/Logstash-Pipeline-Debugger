@@ -9,11 +9,32 @@
 #
 # 
 filter {
-### Tag events that will hit fallback output ###
-  if ![event][dataset] or ![data_stream][namespace] {
+### Keep data_stream.dataset aligned with event.dataset for auto-routing ###
+  if [event][dataset] {
     mutate {
-      add_tag => ["pfelk_routing_fallback"]
+      replace => { "[data_stream][dataset]" => "%{[event][dataset]}" }
     }
+  }
+
+### Tag events that will hit fallback output ###
+  ruby {
+    code => '
+      ds_dataset = event.get("[data_stream][dataset]")
+      ev_dataset = event.get("[event][dataset]")
+      ds_namespace = event.get("[data_stream][namespace]")
+
+      missing_dataset = (ds_dataset.nil? || ds_dataset.to_s.strip.empty?) &&
+                        (ev_dataset.nil? || ev_dataset.to_s.strip.empty?)
+      missing_namespace = ds_namespace.nil? || ds_namespace.to_s.strip.empty?
+
+      if missing_dataset || missing_namespace
+        tags = event.get("tags") || []
+        unless tags.include?("pfelk_routing_fallback")
+          tags << "pfelk_routing_fallback"
+          event.set("tags", tags)
+        end
+      end
+    '
   }
 
 ### Drops logs based on priority - amend as desired ###

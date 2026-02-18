@@ -18,6 +18,7 @@ filter {
     mutate {
       add_tag => "captive" 
       add_field => { "[event][dataset]" => "pfelk.captive" }
+      add_field => { "[data_stream][dataset]" => "pfelk.captive" }
       add_field => { "[data_stream][namespace]" => "captiveportal" }
       rename => { "filter_message" => "captiveportalmessage" }
     }
@@ -31,6 +32,7 @@ filter {
     mutate {
       add_tag => "dpinger"
       add_field => { "[event][dataset]" => "pfelk.dpinger" }
+      add_field => { "[data_stream][dataset]" => "pfelk.dpinger" }
       add_field => { "[data_stream][namespace]" => "firewall_services" }
     }
   }
@@ -39,6 +41,7 @@ filter {
     mutate {
       add_tag => "haproxy"
       add_field => { "[event][dataset]" => "pfelk.haproxy" }
+      add_field => { "[data_stream][dataset]" => "pfelk.haproxy" }
       add_field => { "[data_stream][namespace]" => "haproxy" }
     }
     grok {
@@ -51,6 +54,7 @@ filter {
     mutate {
       add_tag => "nginx"
       add_field => { "[event][dataset]" => "pfelk.nginx" }
+      add_field => { "[data_stream][dataset]" => "pfelk.nginx" }
       add_field => { "[data_stream][namespace]" => "nginx" }
       replace => { "[log][syslog][appname]" => "nginx" }
     }
@@ -64,6 +68,7 @@ filter {
     mutate {
       add_tag => "openvpn"
       add_field => { "[event][dataset]" => "pfelk.openvpn" }
+      add_field => { "[data_stream][dataset]" => "pfelk.openvpn" }
       add_field => { "[data_stream][namespace]" => "openvpn" }
     }
     grok {
@@ -82,6 +87,7 @@ filter {
       add_tag => "bind9"
       add_field => {
         "[event][dataset]" => "pfelk.bind9"
+        "[data_stream][dataset]" => "pfelk.bind9"
         "[data_stream][namespace]" => "firewall_services"
       }
     }
@@ -95,6 +101,7 @@ filter {
     mutate {
       add_tag => "ntpd"
       add_field => { "[event][dataset]" => "pfelk.ntpd" }
+      add_field => { "[data_stream][dataset]" => "pfelk.ntpd" }
       add_field => { "[data_stream][namespace]" => "firewall_services" }
     }
   }
@@ -103,6 +110,7 @@ filter {
     mutate {
       add_tag => "snort"
       add_field => { "[event][dataset]" => "pfelk.snort" }
+      add_field => { "[data_stream][dataset]" => "pfelk.snort" }
       add_field => { "[data_stream][namespace]" => "snort" }
       add_field => { "[event][category]" => "intrusion_detection" }
       add_field => { "[agent][type]" => "snort" }
@@ -117,6 +125,7 @@ filter {
     mutate {
       replace => [ "[log][syslog][appname]", "squid" ]
       add_field => { "[event][dataset]" => "pfelk.squid" }
+      add_field => { "[data_stream][dataset]" => "pfelk.squid" }
       add_field => { "[data_stream][namespace]" => "squid" }
     }
     if [filter_message] =~ /^{.*}$/ {

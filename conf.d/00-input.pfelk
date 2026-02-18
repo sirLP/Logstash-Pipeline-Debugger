@@ -40,6 +40,7 @@ filter {
       replace => {
         "[log][syslog][appname]" => "suricata"
         "[event][dataset]" => "pfelk.suricata"
+        "[data_stream][dataset]" => "pfelk.suricata"
         "[data_stream][namespace]" => "suricata"
       }
     }
@@ -66,6 +67,7 @@ filter {
       replace => {
         "[log][syslog][appname]" => "unbound"
         "[event][dataset]" => "pfelk.unbound"
+        "[data_stream][dataset]" => "pfelk.unbound"
         "[data_stream][namespace]" => "unbound"
       }
     }
@@ -76,6 +78,7 @@ filter {
       replace => {
         "[log][syslog][appname]" => "netflow"
         "[event][dataset]" => "pfelk.netflow"
+        "[data_stream][dataset]" => "pfelk.netflow"
         "[data_stream][namespace]" => "netflow"
       }
     }
@@ -90,6 +93,7 @@ filter {
       replace => {
         "type" => "firewall"
         "[event][dataset]" => "pfelk.firewall"
+        "[data_stream][dataset]" => "pfelk.firewall"
         "[data_stream][namespace]" => "firewall"
       }
     }

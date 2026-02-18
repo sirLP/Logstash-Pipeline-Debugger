@@ -7,13 +7,11 @@
 ################################################################################
 
 output {
-  # Primary modular output: dataset/namespace come from each parser config
-  if [event][dataset] and [data_stream][namespace] {
+  # Primary modular output: route using data_stream.* fields from filters
+  if [data_stream][dataset] and [data_stream][namespace] {
     elasticsearch {
       data_stream => "true"
-      data_stream_type => "logs"
-      data_stream_dataset => "%{[event][dataset]}"
-      data_stream_namespace => "%{[data_stream][namespace]}"
+      data_stream_auto_routing => true
       hosts => ["https://localhost:9200"]
       user => "elastic"
       password => "C0m@ch1o"
