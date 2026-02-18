@@ -2071,6 +2071,11 @@ function showSummaryModal(finalEvent) {
 function detectEventLogType(event) {
     const appname = event['log']?.['syslog']?.['appname'] || '';
     const tags = event['tags'] || [];
+
+    // Check for NetFlow/IPFIX
+    if (appname === 'netflow' || tags.includes('netflow') || event['netflow'] || event['event']?.['dataset'] === 'pfelk.netflow') {
+        return 'netflow';
+    }
     
     // Check for Suricata IDS
     if (appname === 'suricata' || tags.includes('suricata') || event['suricata']) {
@@ -2149,6 +2154,9 @@ function generateSummaryContent(finalEvent, logType) {
     let sections = '';
     
     switch (logType) {
+        case 'netflow':
+            sections = generateNetflowSummary(finalEvent, common);
+            break;
         case 'firewall':
             sections = generateFirewallSummary(finalEvent, common);
             break;
@@ -2176,6 +2184,102 @@ function generateSummaryContent(finalEvent, logType) {
     }
     
     return rawMessageSection + sections + generateTagsSection(common.tags);
+}
+
+/**
+ * Generate NetFlow summary
+ */
+function generateNetflowSummary(event, common) {
+    const source = event['source'] || {};
+    const destination = event['destination'] || {};
+    const network = event['network'] || {};
+    const netflow = event['netflow'] || {};
+
+    const protocolNumber = netflow['protocol'] ?? network['iana_number'] ?? 'N/A';
+    const protocolMap = {
+        1: 'ICMP',
+        6: 'TCP',
+        17: 'UDP',
+        47: 'GRE',
+        50: 'ESP',
+        51: 'AH'
+    };
+    const protocolName = protocolMap[Number(protocolNumber)] || 'Unknown';
+
+    const startSeconds = netflow['flowStartSeconds'];
+    const endSeconds = netflow['flowEndSeconds'];
+    const startTime = Number.isFinite(Number(startSeconds)) ? new Date(Number(startSeconds) * 1000).toISOString() : 'N/A';
+    const endTime = Number.isFinite(Number(endSeconds)) ? new Date(Number(endSeconds) * 1000).toISOString() : 'N/A';
+
+    const flowMatch = (event['event']?.['original'] || '').match(/flow=(\d+)\/(\d+)/i);
+    const flowIndex = flowMatch ? flowMatch[1] : null;
+    const flowTotal = flowMatch ? flowMatch[2] : (netflow['flow_records'] || null);
+
+    return `
+        <div class="summary-grid">
+            <div class="summary-section">
+                <h3>🌐 NetFlow Record</h3>
+                ${flowIndex && flowTotal ? `
+                <div class="summary-item">
+                    <span class="summary-label">Flow Index:</span>
+                    <span class="summary-value">${escapeHtml(String(flowIndex))}/${escapeHtml(String(flowTotal))}</span>
+                </div>
+                ` : ''}
+                <div class="summary-item">
+                    <span class="summary-label">Source:</span>
+                    <span class="summary-value ip">${escapeHtml(source['ip'] || netflow['ipv4_src_addr'] || netflow['ipv6_src_addr'] || 'N/A')}</span>
+                </div>
+                <div class="summary-item">
+                    <span class="summary-label">Source Port:</span>
+                    <span class="summary-value port">${escapeHtml(String(source['port'] ?? netflow['l4_src_port'] ?? 'N/A'))}</span>
+                </div>
+                <div class="summary-item">
+                    <span class="summary-label">Destination:</span>
+                    <span class="summary-value ip">${escapeHtml(destination['ip'] || netflow['ipv4_dst_addr'] || netflow['ipv6_dst_addr'] || 'N/A')}</span>
+                </div>
+                <div class="summary-item">
+                    <span class="summary-label">Destination Port:</span>
+                    <span class="summary-value port">${escapeHtml(String(destination['port'] ?? netflow['l4_dst_port'] ?? 'N/A'))}</span>
+                </div>
+                <div class="summary-item">
+                    <span class="summary-label">Protocol:</span>
+                    <span class="summary-value">${escapeHtml(protocolName)} (${escapeHtml(String(protocolNumber))})</span>
+                </div>
+            </div>
+
+            <div class="summary-section">
+                <h3>📊 Flow Counters</h3>
+                <div class="summary-item">
+                    <span class="summary-label">Bytes:</span>
+                    <span class="summary-value">${escapeHtml(String(network['bytes'] ?? netflow['in_bytes'] ?? netflow['IN_BYTES'] ?? 'N/A'))}</span>
+                </div>
+                <div class="summary-item">
+                    <span class="summary-label">Packets:</span>
+                    <span class="summary-value">${escapeHtml(String(network['packets'] ?? netflow['in_pkts'] ?? netflow['IN_PKTS'] ?? 'N/A'))}</span>
+                </div>
+                <div class="summary-item">
+                    <span class="summary-label">Template ID:</span>
+                    <span class="summary-value">${escapeHtml(String(netflow['template_id'] ?? 'N/A'))}</span>
+                </div>
+                <div class="summary-item">
+                    <span class="summary-label">NetFlow Version:</span>
+                    <span class="summary-value">${escapeHtml(String(netflow['version'] ?? 'N/A'))}</span>
+                </div>
+                <div class="summary-item">
+                    <span class="summary-label">Flow Start:</span>
+                    <span class="summary-value">${escapeHtml(startTime)}</span>
+                </div>
+                <div class="summary-item">
+                    <span class="summary-label">Flow End:</span>
+                    <span class="summary-value">${escapeHtml(endTime)}</span>
+                </div>
+                <div class="summary-item">
+                    <span class="summary-label">Exporter Host:</span>
+                    <span class="summary-value">${escapeHtml(common.hostname)}</span>
+                </div>
+            </div>
+        </div>
+    `;
 }
 
 /**
