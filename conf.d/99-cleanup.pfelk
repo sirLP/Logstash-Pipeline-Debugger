@@ -88,6 +88,12 @@ filter {
 #    }
 #  }
 ### Split multiple values witin pf.tcp.options ###
+   if "unbound" in [tags] and [filter_message] {
+     mutate {
+       replace => { "message" => "%{filter_message}" }
+     }
+   }
+
    mutate {
      remove_field => ["filter_message", "pfelk", "pfelk_csv"]
      split => { "[pf][tcp][options]" => ";" }
