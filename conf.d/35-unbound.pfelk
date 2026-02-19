@@ -136,12 +136,28 @@ filter {
           match => [ "filter_message", "%{UNBOUND}" ]
           tag_on_failure => ["grok_fail_35_unbound_main"]
         }
-        if "_grokparsefailure" in [tags] {
+        if "_grokparsefailure" in [tags] or "grok_fail_35_unbound_main" in [tags] {
           mutate { remove_tag => [ "_grokparsefailure", "grok_fail_35_unbound_main" ] }
           grok {
             patterns_dir => [ "/etc/pfelk/patterns" ]
             match => [ "filter_message", "%{UNBOUND_RESOLVING}" ]
             tag_on_failure => ["grok_fail_35_unbound_resolving"]
+          }
+        }
+
+        if "grok_fail_35_unbound_resolving" in [tags] {
+          mutate { remove_tag => [ "grok_fail_35_unbound_resolving" ] }
+          grok {
+            match => [ "filter_message", "\[%{INT:[process][pgid]}:%{INT:[process][thread][id]}\] %{LOGLEVEL:[log][level]}: %{IP:[client][ip]} %{NOTSPACE:[dns][question][name]} %{WORD:[dns][question][type]} %{WORD:[dns][question][class]}( %{WORD:[dns][return_code]} %{NUMBER:[dns][timing]} %{INT:[dns][from_cache]} %{INT:[dns][response_size]})?" ]
+            tag_on_failure => ["grok_fail_35_unbound_inline_query"]
+          }
+        }
+
+        if "grok_fail_35_unbound_inline_query" in [tags] {
+          mutate { remove_tag => [ "grok_fail_35_unbound_inline_query" ] }
+          grok {
+            match => [ "filter_message", "\[%{INT:[process][pgid]}:%{INT:[process][thread][id]}\] %{LOGLEVEL:[log][level]}: resolving %{NOTSPACE:[dns][question][name]} %{WORD:[dns][question][type]} %{WORD:[dns][question][class]}" ]
+            tag_on_failure => ["grok_fail_35_unbound_inline_resolving"]
           }
         }
         ### unbound ECS => Built-in SIEM ###
