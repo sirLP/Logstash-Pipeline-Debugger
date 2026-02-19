@@ -19,7 +19,7 @@ input {
     id => "pfelk-dns-tcp"
     port => 5142
     type => "unbound"
-    codec => plain { charset => "UTF-8" }
+    codec => line { charset => "UTF-8" }
     tags => ["pfelk", "unbound_raw"]
   }
 }
@@ -38,7 +38,7 @@ filter {
     
     # 2. Strip the inner pfSense syslog header (RFC5424 format)
     grok {
-      match => { "filter_message" => "%{TIMESTAMP_ISO8601}\s+%{NOTSPACE}\s+%{NOTSPACE}\s+%{NOTSPACE}\s+-\s+-\s+%{GREEDYDATA:filter_message}" }
+      match => { "filter_message" => "(?:<%{INT}>%{INT}\s+)?%{TIMESTAMP_ISO8601}\s+%{NOTSPACE}\s+%{NOTSPACE}\s+%{NOTSPACE}\s+-\s+-\s+%{GREEDYDATA:filter_message}" }
       overwrite => [ "filter_message" ]
     }
 
