@@ -41,7 +41,16 @@ filter {
       ] }
     }
     
-    # 2. If wrapped format was used, strip inner RFC5424 header
+    # 2. If wrapped format was used, strip intermediate RFC5424 header
+    #    (timestamp host app procid msgid structured_data ...)
+    if [filter_message] =~ /^\d{4}-\d{2}-\d{2}T/ {
+      grok {
+        match => { "filter_message" => "%{TIMESTAMP_ISO8601}\s+%{NOTSPACE}\s+%{NOTSPACE}\s+%{NOTSPACE}\s+-\s+-\s+%{GREEDYDATA:filter_message}" }
+        overwrite => [ "filter_message" ]
+      }
+    }
+
+    # 3. If the remaining payload is still RFC5424, strip that too
     if [filter_message] =~ /^<\d+>\d+\s+/ {
       grok {
         match => { "filter_message" => "(?:<%{INT}>%{INT}\s+)?%{TIMESTAMP_ISO8601}\s+%{NOTSPACE}\s+%{NOTSPACE}\s+%{NOTSPACE}\s+-\s+-\s+%{GREEDYDATA:filter_message}" }
@@ -49,7 +58,7 @@ filter {
       }
     }
 
-    # 3. Final cleanup for pfELK consumption
+    # 4. Final cleanup for pfELK consumption
     mutate { 
       strip => ["filter_message"]
     }
