@@ -38,18 +38,18 @@ filter {
       }
     }
 
-    if [filter_message] !~ /^\[\d+:\d+\]\s+/ {
-      grok {
-        match => {
-          "filter_message" => ".*(?<unbound_payload>\[%{INT:[process][pgid]}:%{INT:[process][thread][id]}\]\s+%{LOGLEVEL:[log][level]}:\s+%{GREEDYDATA})"
-        }
-        tag_on_failure => []
+    # Canonicalize to unbound payload regardless of any remaining prefix
+    # Example result: [97869:0] info: 192.168.178.58 telemetry.elastic.co. A IN NOERROR ...
+    grok {
+      match => {
+        "filter_message" => ".*(\[%{INT:[process][pgid]}:%{INT:[process][thread][id]}\]\s+%{LOGLEVEL:[log][level]}:\s+%{GREEDYDATA:unbound_payload})"
       }
-      if [unbound_payload] {
-        mutate {
-          replace => { "filter_message" => "%{unbound_payload}" }
-          remove_field => [ "unbound_payload" ]
-        }
+      tag_on_failure => []
+    }
+    if [unbound_payload] {
+      mutate {
+        replace => { "filter_message" => "%{unbound_payload}" }
+        remove_field => [ "unbound_payload" ]
       }
     }
 
