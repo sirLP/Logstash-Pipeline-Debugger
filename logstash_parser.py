@@ -416,47 +416,60 @@ class LogstashParser:
             grok_patterns = [pattern]
             print(f"[GROK DEBUG] Found hash format match")
         else:
-            # Try array format with multiple patterns
+            # Try hash format with pattern array
+            # Format: match => { "field" => [ "pattern1", "pattern2", ... ] }
+            hash_array_match = re.search(
+                r'match\s*=>\s*\{\s*"([^"]+)"\s*=>\s*\[(.*?)\]\s*\}',
+                config,
+                re.DOTALL
+            )
+            if hash_array_match:
+                field_name = hash_array_match.group(1)
+                array_content = hash_array_match.group(2)
+                grok_patterns = re.findall(r'"([^"\\]*(?:\\.[^"\\]*)*)"', array_content)
+                print(f"[GROK DEBUG] Found hash+array format match - field: {field_name}, patterns: {len(grok_patterns)}")
+            else:
+                # Try array format with multiple patterns
             # Format: match => [ "field", "pattern1", "pattern2", ... ]
             # Need to match the entire array, so find the matching closing bracket
             # Use a more careful approach to handle brackets inside quoted strings
-            array_start = re.search(r'match\s*=>\s*\[', config)
-            if array_start:
+                array_start = re.search(r'match\s*=>\s*\[', config)
+                if array_start:
                 # Find the matching closing bracket by counting bracket depth
                 # but only outside of quoted strings
-                start_pos = array_start.end()
-                bracket_depth = 1
-                in_quotes = False
-                escape_next = False
-                end_pos = start_pos
+                    start_pos = array_start.end()
+                    bracket_depth = 1
+                    in_quotes = False
+                    escape_next = False
+                    end_pos = start_pos
                 
-                for i, char in enumerate(config[start_pos:], start=start_pos):
-                    if escape_next:
-                        escape_next = False
-                        continue
-                    if char == '\\':
-                        escape_next = True
-                        continue
-                    if char == '"' and not escape_next:
-                        in_quotes = not in_quotes
-                    elif not in_quotes:
-                        if char == '[':
-                            bracket_depth += 1
-                        elif char == ']':
-                            bracket_depth -= 1
-                            if bracket_depth == 0:
-                                end_pos = i
-                                break
+                    for i, char in enumerate(config[start_pos:], start=start_pos):
+                        if escape_next:
+                            escape_next = False
+                            continue
+                        if char == '\\':
+                            escape_next = True
+                            continue
+                        if char == '"' and not escape_next:
+                            in_quotes = not in_quotes
+                        elif not in_quotes:
+                            if char == '[':
+                                bracket_depth += 1
+                            elif char == ']':
+                                bracket_depth -= 1
+                                if bracket_depth == 0:
+                                    end_pos = i
+                                    break
                 
-                if bracket_depth == 0:
+                    if bracket_depth == 0:
                     # Extract the content between the brackets
-                    array_content = config[start_pos:end_pos]
+                        array_content = config[start_pos:end_pos]
                     # Extract all quoted strings
-                    all_quoted = re.findall(r'"([^"\\]*(?:\\.[^"\\]*)*)"', array_content)
-                    if all_quoted:
-                        field_name = all_quoted[0]
-                        grok_patterns = all_quoted[1:]
-                        print(f"[GROK DEBUG] Array format matched - field: {field_name}, patterns: {len(grok_patterns)}")
+                        all_quoted = re.findall(r'"([^"\\]*(?:\\.[^"\\]*)*)"', array_content)
+                        if all_quoted:
+                            field_name = all_quoted[0]
+                            grok_patterns = all_quoted[1:]
+                            print(f"[GROK DEBUG] Array format matched - field: {field_name}, patterns: {len(grok_patterns)}")
         
         if not field_name or not grok_patterns:
             print(f"[GROK DEBUG] No match pattern found in config: {config[:200]}")

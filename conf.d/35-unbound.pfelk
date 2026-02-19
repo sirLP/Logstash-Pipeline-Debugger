@@ -9,6 +9,25 @@
 filter {
   ### unbound ###
   if [type] == "unbound" or [log][syslog][appname] =~ /^unbound/ {
+    if ![filter_message] and [message] {
+      mutate {
+        copy => { "message" => "filter_message" }
+        add_tag => "unbound_fallback_copy_message"
+      }
+    }
+
+    if [filter_message] =~ /^<\d+>\d+\s+/ {
+      grok {
+        match => {
+          "filter_message" => "<%{INT}>%{INT}\s+%{TIMESTAMP_ISO8601}\s+%{NOTSPACE}\s+%{NOTSPACE}\s+%{NOTSPACE}\s+%{NOTSPACE}\s+%{NOTSPACE}\s+%{GREEDYDATA:filter_message}"
+        }
+        overwrite => [ "filter_message" ]
+      }
+      mutate {
+        add_tag => "unbound_fallback_strip_rfc5424"
+      }
+    }
+
     mutate {
       add_tag => "unbound"
       replace => {

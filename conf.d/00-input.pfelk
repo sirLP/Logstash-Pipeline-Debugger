@@ -31,15 +31,22 @@ filter {
     }
   } 
   else if [type] == "unbound" {
-    # 1. Strip the outer syslog-ng envelope (Header 1)
+    # 1. Parse unbound input in either format:
+    #    a) wrapped syslog-ng envelope with [meta sequenceId]
+    #    b) direct RFC5424 line from unbound sender
     grok {
-      match => { "message" => "<%{INT:[log][syslog][priority]}>%{INT:[log][syslog][version]}\s+%{NOTSPACE}\s+%{NOTSPACE}\s+%{NOTSPACE}\s+\[meta sequenceId=\"%{INT}\"\]\s+%{GREEDYDATA:filter_message}" }
+      match => { "message" => [
+        "<%{INT:[log][syslog][priority]}>%{INT:[log][syslog][version]}\s+%{NOTSPACE}\s+%{NOTSPACE}\s+%{NOTSPACE}\s+\[meta sequenceId=\"%{INT}\"\]\s+%{GREEDYDATA:filter_message}",
+        "<%{INT:[log][syslog][priority]}>%{INT:[log][syslog][version]}\s+%{NOTSPACE:[log][syslog][timestamp]}\s+%{NOTSPACE:[log][syslog][hostname]}\s+%{NOTSPACE:[log][syslog][appname]}\s+%{NOTSPACE:[log][syslog][procid]}\s+%{NOTSPACE:[log][syslog][msgid]}\s+%{NOTSPACE:[log][syslog][structured_data]}\s+%{GREEDYDATA:filter_message}"
+      ] }
     }
     
-    # 2. Strip the inner pfSense syslog header (RFC5424 format)
-    grok {
-      match => { "filter_message" => "(?:<%{INT}>%{INT}\s+)?%{TIMESTAMP_ISO8601}\s+%{NOTSPACE}\s+%{NOTSPACE}\s+%{NOTSPACE}\s+-\s+-\s+%{GREEDYDATA:filter_message}" }
-      overwrite => [ "filter_message" ]
+    # 2. If wrapped format was used, strip inner RFC5424 header
+    if [filter_message] =~ /^<\d+>\d+\s+/ {
+      grok {
+        match => { "filter_message" => "(?:<%{INT}>%{INT}\s+)?%{TIMESTAMP_ISO8601}\s+%{NOTSPACE}\s+%{NOTSPACE}\s+%{NOTSPACE}\s+-\s+-\s+%{GREEDYDATA:filter_message}" }
+        overwrite => [ "filter_message" ]
+      }
     }
 
     # 3. Final cleanup for pfELK consumption
