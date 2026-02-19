@@ -11,10 +11,12 @@ filter {
   if [log][syslog][appname] =~ /^filterlog$/ {
     mutate {
       add_tag => "firewall"
-      add_field => { "[event][dataset]" => "pfelk.firewall" }
-      add_field => { "[data_stream][dataset]" => "pfelk.firewall" }
-      add_field => { "[data_stream][namespace]" => "firewall" }
-      replace => { "[log][syslog][appname]" => "firewall" }
+      replace => {
+        "[event][dataset]" => "pfelk.firewall"
+        "[data_stream][dataset]" => "pfelk.firewall"
+        "[data_stream][namespace]" => "firewall"
+        "[log][syslog][appname]" => "firewall"
+      }
       copy => { "filter_message" => "pfelk_csv" }
     }
     mutate {
