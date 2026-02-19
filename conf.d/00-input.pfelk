@@ -29,6 +29,16 @@ filter {
     mutate {
       copy => { "message" => "filter_message" }
     }
+
+    # Support syslog-wrapped Suricata EVE JSON lines, e.g.:
+    # <13>Feb 20 00:27:24 pfSense suricata: { ...json... }
+    if [filter_message] !~ /^\{.*\}$/ {
+      grok {
+        match => { "filter_message" => "<%{INT:[log][syslog][priority]}>%{SYSLOGTIMESTAMP:[log][syslog][timestamp]}\s+%{HOSTNAME:[log][syslog][hostname]}\s+suricata:\s+%{GREEDYDATA:filter_message}" }
+        overwrite => [ "filter_message" ]
+        tag_on_failure => ["grok_fail_00_input_suricata_syslog_wrap"]
+      }
+    }
   } 
   else if [type] == "unbound" {
     mutate {
