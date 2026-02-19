@@ -48,7 +48,7 @@ filter {
     }
     if [unbound_payload] {
       mutate {
-        replace => { "filter_message" => "%{unbound_payload}" }
+        replace => { "filter_message" => "[%{[process][pgid]}:%{[process][thread][id]}] %{[log][level]}: %{unbound_payload}" }
         remove_field => [ "unbound_payload" ]
       }
     }
