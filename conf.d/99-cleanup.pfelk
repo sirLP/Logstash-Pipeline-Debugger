@@ -12,24 +12,41 @@ filter {
 ### Keep data_stream.dataset aligned with event.dataset for auto-routing ###
   ruby {
     code => '
+      normalize_list_value = lambda do |value|
+        return value if value.nil?
+
+        values = nil
+        if value.is_a?(Array)
+          values = value
+        elsif value.respond_to?(:to_a) && !value.is_a?(String)
+          begin
+            values = value.to_a
+          rescue
+            values = nil
+          end
+        end
+
+        return value if values.nil?
+
+        values = values.reject { |v| v.nil? || v.to_s.strip.empty? }
+        return nil if values.empty?
+
+        preferred = values.find { |v| v.to_s != "firewall" }
+        (preferred || values.last).to_s
+      end
+
       ev_dataset = event.get("[event][dataset]")
       ds_dataset = event.get("[data_stream][dataset]")
       ds_namespace = event.get("[data_stream][namespace]")
 
-      if ev_dataset.is_a?(Array)
-        ev_dataset = ev_dataset.reject { |v| v.nil? || v.to_s.strip.empty? }.last
-        event.set("[event][dataset]", ev_dataset) unless ev_dataset.nil?
-      end
+      ev_dataset = normalize_list_value.call(ev_dataset)
+      event.set("[event][dataset]", ev_dataset) unless ev_dataset.nil?
 
-      if ds_dataset.is_a?(Array)
-        ds_dataset = ds_dataset.reject { |v| v.nil? || v.to_s.strip.empty? }.last
-        event.set("[data_stream][dataset]", ds_dataset) unless ds_dataset.nil?
-      end
+      ds_dataset = normalize_list_value.call(ds_dataset)
+      event.set("[data_stream][dataset]", ds_dataset) unless ds_dataset.nil?
 
-      if ds_namespace.is_a?(Array)
-        ds_namespace = ds_namespace.reject { |v| v.nil? || v.to_s.strip.empty? }.last
-        event.set("[data_stream][namespace]", ds_namespace) unless ds_namespace.nil?
-      end
+      ds_namespace = normalize_list_value.call(ds_namespace)
+      event.set("[data_stream][namespace]", ds_namespace) unless ds_namespace.nil?
     '
   }
 
