@@ -12,9 +12,11 @@ filter {
   if [log][syslog][appname] =~ /^sshd/ {
     mutate {
       add_tag => "sshd"
-      add_field => { "[event][dataset]" => "pfelk.sshd" }
-      add_field => { "[data_stream][dataset]" => "pfelk.sshd" }
-      add_field => { "[data_stream][namespace]" => "sshd" }
+      replace => {
+        "[event][dataset]" => "pfelk.sshd"
+        "[data_stream][dataset]" => "pfelk.sshd"
+        "[data_stream][namespace]" => "sshd"
+      }
       add_field => { "[event][category]" => "authentication" }
     }
     # Parse authentication failures

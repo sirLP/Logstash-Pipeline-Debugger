@@ -11,12 +11,12 @@ filter {
   if [log][syslog][appname] =~ /^php-fpm/ {
     mutate {
       add_tag => "web_portal"
-      add_field => {
+      replace => {
         "[event][dataset]" => "pfelk.webportal"
         "[data_stream][dataset]" => "pfelk.webportal"
         "[data_stream][namespace]" => "firewall_services"
-        "[event][category]" => "web_application"
       }
+      add_field => { "[event][category]" => "web_application" }
     }
     grok {
       patterns_dir => [ "/etc/pfelk/patterns" ]

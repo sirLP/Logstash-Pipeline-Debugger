@@ -26,18 +26,8 @@ input {
 
 filter {
   if [type] == "suricata" {
-    grok { match => { "message" => "(?<filter_message>\{.*\".*\":.*\})" } }
-    mutate { 
-      add_field => { "[@metadata][pfelk_namespace]" => "suricata" }
-      replace => {
-        "[log][syslog][appname]" => "suricata"
-        "[event][dataset]" => "pfelk.suricata"
-        "[data_stream][dataset]" => "pfelk.suricata"
-        "[data_stream][namespace]" => "suricata"
-      }
-    }
-    if [filter_message] =~ /^\{/ {
-      json { source => "filter_message" target => "[suricata][eve]" add_tag => "suricata_json" }
+    mutate {
+      copy => { "message" => "filter_message" }
     }
   } 
   else if [type] == "unbound" {
@@ -55,13 +45,6 @@ filter {
     # 3. Final cleanup for pfELK consumption
     mutate { 
       strip => ["filter_message"]
-      add_field => { "[@metadata][pfelk_namespace]" => "unbound" }
-      replace => {
-        "[log][syslog][appname]" => "unbound"
-        "[event][dataset]" => "pfelk.unbound"
-        "[data_stream][dataset]" => "pfelk.unbound"
-        "[data_stream][namespace]" => "unbound"
-      }
     }
   }
   else {
@@ -70,12 +53,8 @@ filter {
       match => { "message" => "<%{INT:[log][syslog][priority]}>%{INT:[log][syslog][version]} %{NOTSPACE:[log][syslog][timestamp]} %{NOTSPACE:[log][syslog][hostname]} %{NOTSPACE:[log][syslog][appname]} %{NOTSPACE:[log][syslog][procid]} %{NOTSPACE:[log][syslog][msgid]} %{NOTSPACE:[log][syslog][structured_data]} %{GREEDYDATA:filter_message}" }
     }
     mutate {
-      add_field => { "[@metadata][pfelk_namespace]" => "firewall" }
       replace => {
         "type" => "firewall"
-        "[event][dataset]" => "pfelk.firewall"
-        "[data_stream][dataset]" => "pfelk.firewall"
-        "[data_stream][namespace]" => "firewall"
       }
     }
   }

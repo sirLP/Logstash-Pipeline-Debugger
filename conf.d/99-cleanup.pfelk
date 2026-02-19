@@ -10,6 +10,29 @@
 # 
 filter {
 ### Keep data_stream.dataset aligned with event.dataset for auto-routing ###
+  ruby {
+    code => '
+      ev_dataset = event.get("[event][dataset]")
+      ds_dataset = event.get("[data_stream][dataset]")
+      ds_namespace = event.get("[data_stream][namespace]")
+
+      if ev_dataset.is_a?(Array)
+        ev_dataset = ev_dataset.reject { |v| v.nil? || v.to_s.strip.empty? }.last
+        event.set("[event][dataset]", ev_dataset) unless ev_dataset.nil?
+      end
+
+      if ds_dataset.is_a?(Array)
+        ds_dataset = ds_dataset.reject { |v| v.nil? || v.to_s.strip.empty? }.last
+        event.set("[data_stream][dataset]", ds_dataset) unless ds_dataset.nil?
+      end
+
+      if ds_namespace.is_a?(Array)
+        ds_namespace = ds_namespace.reject { |v| v.nil? || v.to_s.strip.empty? }.last
+        event.set("[data_stream][namespace]", ds_namespace) unless ds_namespace.nil?
+      end
+    '
+  }
+
   if [event][dataset] {
     mutate {
       replace => { "[data_stream][dataset]" => "%{[event][dataset]}" }

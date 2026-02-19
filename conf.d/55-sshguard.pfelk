@@ -11,9 +11,11 @@ filter {
   if [log][syslog][appname] =~ /^sshguard/ {
     mutate {
       add_tag => "sshguard"
-      add_field => { "[event][dataset]" => "pfelk.sshguard" }
-      add_field => { "[data_stream][dataset]" => "pfelk.sshguard" }
-      add_field => { "[data_stream][namespace]" => "sshguard" }
+      replace => {
+        "[event][dataset]" => "pfelk.sshguard"
+        "[data_stream][dataset]" => "pfelk.sshguard"
+        "[data_stream][namespace]" => "sshguard"
+      }
       add_field => { "[event][category]" => "intrusion_detection" }
     }
     grok {

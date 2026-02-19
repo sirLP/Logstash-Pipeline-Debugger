@@ -8,7 +8,7 @@
 #
 filter {
   ### suricata ###
-  if [log][syslog][appname] =~ /^suricata$/ {
+  if [type] == "suricata" or [log][syslog][appname] =~ /^suricata$/ {
     if [filter_message] =~ /^{.*}$/ {
       json {
         source => "filter_message"
@@ -46,9 +46,12 @@ filter {
     mutate {
       remove_tag => "suricata_json"
       add_tag => "suricata"
-      add_field => { "[event][dataset]" => "pfelk.suricata" }
-      add_field => { "[data_stream][dataset]" => "pfelk.suricata" }
-      add_field => { "[data_stream][namespace]" => "suricata" }
+      replace => {
+        "[log][syslog][appname]" => "suricata"
+        "[event][dataset]" => "pfelk.suricata"
+        "[data_stream][dataset]" => "pfelk.suricata"
+        "[data_stream][namespace]" => "suricata"
+      }
     }
   }
 }
