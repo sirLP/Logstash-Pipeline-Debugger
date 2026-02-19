@@ -36,8 +36,8 @@ filter {
     #    b) direct RFC5424 line from unbound sender
     grok {
       match => { "message" => [
-        "<%{INT:[log][syslog][priority]}>%{INT:[log][syslog][version]}\s+%{NOTSPACE}\s+%{NOTSPACE}\s+%{NOTSPACE}\s+\[meta sequenceId=\"%{INT}\"\]\s+%{GREEDYDATA:filter_message}",
-        "<%{INT:[log][syslog][priority]}>%{INT:[log][syslog][version]}\s+%{NOTSPACE:[log][syslog][timestamp]}\s+%{NOTSPACE:[log][syslog][hostname]}\s+%{NOTSPACE:[log][syslog][appname]}\s+%{NOTSPACE:[log][syslog][procid]}\s+%{NOTSPACE:[log][syslog][msgid]}\s+%{NOTSPACE:[log][syslog][structured_data]}\s+%{GREEDYDATA:filter_message}"
+        "<%{INT:[log][syslog][priority]}>%{INT:[log][syslog][version]}\s+%{NOTSPACE:[log][syslog][timestamp]}\s+%{NOTSPACE:[log][syslog][hostname]}\s+%{NOTSPACE:[log][syslog][appname]}\s+%{NOTSPACE:[log][syslog][procid]}\s+%{NOTSPACE:[log][syslog][msgid]}\s+\[meta sequenceId=\"%{INT:[event][sequence]}\"\]\s+%{GREEDYDATA:filter_message}",
+        "<%{INT:[log][syslog][priority]}>%{INT:[log][syslog][version]}\s+%{NOTSPACE:[log][syslog][timestamp]}\s+%{NOTSPACE:[log][syslog][hostname]}\s+%{NOTSPACE:[log][syslog][appname]}\s+%{NOTSPACE:[log][syslog][procid]}\s+%{NOTSPACE:[log][syslog][msgid]}\s+(?:-|\[[^\]]*\])\s+%{GREEDYDATA:filter_message}"
       ] }
     }
     
