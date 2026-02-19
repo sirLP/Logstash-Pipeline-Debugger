@@ -38,7 +38,7 @@ filter {
     # Strict unbound format: outer wrapper + inner RFC5424 payload.
     grok {
       match => { "message" => "<%{INT:[log][syslog][priority]}>%{INT:[log][syslog][version]}\s+%{NOTSPACE:[log][syslog][timestamp]}\s+%{NOTSPACE:[log][syslog][hostname]}\s+%{NOTSPACE:[log][syslog][appname]}\s+%{NOTSPACE:[log][syslog][procid]}\s+%{NOTSPACE:[log][syslog][msgid]}\s+\[meta sequenceId=\"%{INT:[event][sequence]}\"\]\s+%{GREEDYDATA:filter_message}" }
-      tag_on_failure => []
+      tag_on_failure => ["grok_fail_00_input_unbound_outer"]
     }
 
     # 2. Strip intermediate outer header and keep inner unbound payload as message.
@@ -49,7 +49,7 @@ filter {
           "%{TIMESTAMP_ISO8601}\s+%{NOTSPACE}\s+%{NOTSPACE}\s+%{NOTSPACE}\s+-\s+-\s+%{GREEDYDATA:message}"
         ] }
         overwrite => [ "message" ]
-        tag_on_failure => []
+        tag_on_failure => ["grok_fail_00_input_unbound_inner"]
       }
     }
 
@@ -63,6 +63,7 @@ filter {
     # Standard Firewall RFC5424 unwrapping
     grok {
       match => { "message" => "<%{INT:[log][syslog][priority]}>%{INT:[log][syslog][version]} %{NOTSPACE:[log][syslog][timestamp]} %{NOTSPACE:[log][syslog][hostname]} %{NOTSPACE:[log][syslog][appname]} %{NOTSPACE:[log][syslog][procid]} %{NOTSPACE:[log][syslog][msgid]} %{NOTSPACE:[log][syslog][structured_data]} %{GREEDYDATA:filter_message}" }
+      tag_on_failure => ["grok_fail_00_input_firewall_rfc5424"]
     }
     mutate {
       replace => {

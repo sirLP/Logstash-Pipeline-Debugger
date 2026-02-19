@@ -21,7 +21,7 @@ filter {
           "filter_message" => "<%{INT}>%{INT}\s+%{TIMESTAMP_ISO8601}\s+%{NOTSPACE}\s+%{NOTSPACE}\s+%{NOTSPACE}\s+%{NOTSPACE}\s+%{NOTSPACE}\s+%{GREEDYDATA:filter_message}"
         }
         overwrite => [ "filter_message" ]
-        tag_on_failure => []
+        tag_on_failure => ["grok_fail_35_unbound_strip_inner_rfc5424"]
       }
     }
 
@@ -34,7 +34,7 @@ filter {
           ]
         }
         overwrite => [ "filter_message" ]
-        tag_on_failure => []
+        tag_on_failure => ["grok_fail_35_unbound_strip_inner_timestamp"]
       }
     }
 
@@ -44,7 +44,7 @@ filter {
       match => {
         "filter_message" => ".*(\[%{INT:[process][pgid]}:%{INT:[process][thread][id]}\]\s+%{LOGLEVEL:[log][level]}:\s+%{GREEDYDATA:unbound_payload})"
       }
-      tag_on_failure => []
+      tag_on_failure => ["grok_fail_35_unbound_payload_extract"]
     }
     if [unbound_payload] {
       mutate {
@@ -67,6 +67,7 @@ filter {
     if [filter_message] =~ /Verified that/ {
       grok {
         match => [ "filter_message", "\[%{INT:[process][pgid]}:%{INT:[process][thread][id]}\] %{LOGLEVEL:[log][level]}: Verified that %{WORD:[dnssec][response_type]} response is %{WORD:[dnssec][validation_state]}" ]
+        tag_on_failure => ["grok_fail_35_unbound_dnssec_validation"]
       }
       mutate {
         add_field => { "[dnssec][message_type]" => "validation" }
@@ -76,6 +77,7 @@ filter {
     else if [filter_message] =~ /NSEC3?s? / {
       grok {
         match => [ "filter_message", "\[%{INT:[process][pgid]}:%{INT:[process][thread][id]}\] %{LOGLEVEL:[log][level]}: %{WORD:[dnssec][proof_type]} for %{DATA:[dnssec][target]} (?<[dnssec][result]>proved .+)$" ]
+        tag_on_failure => ["grok_fail_35_unbound_dnssec_proof"]
       }
       mutate {
         add_field => { "[dnssec][message_type]" => "proof" }
@@ -85,6 +87,7 @@ filter {
     else if [filter_message] =~ /validation failure/ {
       grok {
         match => [ "filter_message", "\[%{INT:[process][pgid]}:%{INT:[process][thread][id]}\] %{LOGLEVEL:[log][level]}: validation failure %{NOTSPACE:[dns][question][name]}" ]
+        tag_on_failure => ["grok_fail_35_unbound_dnssec_validation_failure"]
       }
       mutate {
         add_field => { 
@@ -97,6 +100,7 @@ filter {
     else if [filter_message] =~ /prime trust anchor/ {
       grok {
         match => [ "filter_message", "\[%{INT:[process][pgid]}:%{INT:[process][thread][id]}\] %{LOGLEVEL:[log][level]}: %{DATA:[dnssec][action]}: %{GREEDYDATA:[dnssec][details]}" ]
+        tag_on_failure => ["grok_fail_35_unbound_dnssec_trust_anchor"]
       }
       mutate {
         add_field => { "[dnssec][message_type]" => "trust_anchor" }
@@ -106,6 +110,7 @@ filter {
     else if [filter_message] =~ /sendto failed/ {
       grok {
         match => [ "filter_message", "\[%{INT:[process][pgid]}:%{INT:[process][thread][id]}\] %{LOGLEVEL:[log][level]}: sendto failed: %{GREEDYDATA:[network][error]}" ]
+        tag_on_failure => ["grok_fail_35_unbound_sendto_failed"]
       }
       mutate {
         add_field => { "[event][outcome]" => "failure" }
@@ -118,6 +123,7 @@ filter {
       if [filter_message] =~ /query response was/ {
         grok {
           match => [ "filter_message", "\[%{INT:[process][pgid]}:%{INT:[process][thread][id]}\] %{LOGLEVEL:[log][level]}: query response was %{WORD:[dns][response_status]} %{WORD:[dns][response_type]}" ]
+          tag_on_failure => ["grok_fail_35_unbound_query_response_status"]
         }
         mutate {
           add_field => { "[dns][message_type]" => "response_status" }
@@ -128,26 +134,31 @@ filter {
         grok {
           patterns_dir => [ "/etc/pfelk/patterns" ]
           match => [ "filter_message", "%{UNBOUND}" ]
+          tag_on_failure => ["grok_fail_35_unbound_main"]
         }
         if "_grokparsefailure" in [tags] {
-          mutate { remove_tag => [ "_grokparsefailure" ] }
+          mutate { remove_tag => [ "_grokparsefailure", "grok_fail_35_unbound_main" ] }
           grok {
             patterns_dir => [ "/etc/pfelk/patterns" ]
             match => [ "filter_message", "%{UNBOUND_RESOLVING}" ]
+            tag_on_failure => ["grok_fail_35_unbound_resolving"]
           }
         }
         ### unbound ECS => Built-in SIEM ###
         grok {
           match => [ "[dns][question][name]", "(\.)?(?<[dns][question][registered_domain]>[^.]+\.[^.]+)\.?$" ] 
           add_tag => "unbound-registered_domain"
+          tag_on_failure => ["grok_fail_35_unbound_registered_domain_first"]
         }
         if "unbound-registered_domain" not in [tags] {
           grok { 
             match => [ "[dns][question][name]", "(?<[dns][question][registered_domain]>[^.]+\.[^.]+)\.?$" ] 
+            tag_on_failure => ["grok_fail_35_unbound_registered_domain_second"]
           }
         }
         grok {
           match => [ "[dns][question][name]", "(\.)?(?<[dns][question][top_level_domain]>[^.]+)\.?$" ]
+          tag_on_failure => ["grok_fail_35_unbound_tld"]
         }
 
         mutate {
