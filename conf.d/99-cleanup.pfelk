@@ -87,6 +87,14 @@ filter {
 #      replace => [ "[log][syslog][appname]", "openvpn" ]
 #    }
 #  }
+
+  if [@metadata][raw_message] {
+    mutate {
+      replace => { "message" => "%{[@metadata][raw_message]}" }
+      remove_field => ["[@metadata][raw_message]"]
+    }
+  }
+
 ### Split multiple values witin pf.tcp.options ###
    mutate {
      remove_field => ["filter_message", "pfelk", "pfelk_csv"]

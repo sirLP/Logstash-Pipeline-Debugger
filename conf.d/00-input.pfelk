@@ -31,35 +31,29 @@ filter {
     }
   } 
   else if [type] == "unbound" {
-    # 1. Parse unbound input in either format:
-    #    a) wrapped syslog-ng envelope with [meta sequenceId]
-    #    b) direct RFC5424 line from unbound sender
-    grok {
-      match => { "message" => [
-        "<%{INT:[log][syslog][priority]}>%{INT:[log][syslog][version]}\s+%{NOTSPACE:[log][syslog][timestamp]}\s+%{NOTSPACE:[log][syslog][hostname]}\s+%{NOTSPACE:[log][syslog][appname]}\s+%{NOTSPACE:[log][syslog][procid]}\s+%{NOTSPACE:[log][syslog][msgid]}\s+\[meta sequenceId=\"%{INT:[event][sequence]}\"\]\s+%{GREEDYDATA:filter_message}",
-        "<%{INT:[log][syslog][priority]}>%{INT:[log][syslog][version]}\s+%{NOTSPACE:[log][syslog][timestamp]}\s+%{NOTSPACE:[log][syslog][hostname]}\s+%{NOTSPACE:[log][syslog][appname]}\s+%{NOTSPACE:[log][syslog][procid]}\s+%{NOTSPACE:[log][syslog][msgid]}\s+(?:-|\[[^\]]*\])\s+%{GREEDYDATA:filter_message}"
-      ] }
+    mutate {
+      copy => { "message" => "[@metadata][raw_message]" }
     }
-    
-    # 2. If wrapped format was used, strip intermediate RFC5424 header
-    #    (timestamp host app procid msgid structured_data ...)
+
+    # Strict unbound format: outer wrapper + inner RFC5424 payload.
+    grok {
+      match => { "message" => "<%{INT:[log][syslog][priority]}>%{INT:[log][syslog][version]}\s+%{NOTSPACE:[log][syslog][timestamp]}\s+%{NOTSPACE:[log][syslog][hostname]}\s+%{NOTSPACE:[log][syslog][appname]}\s+%{NOTSPACE:[log][syslog][procid]}\s+%{NOTSPACE:[log][syslog][msgid]}\s+\[meta sequenceId=\"%{INT:[event][sequence]}\"\]\s+%{GREEDYDATA:filter_message}" }
+    }
+
+    # 2. Strip intermediate outer header and keep inner unbound payload as message.
     if [filter_message] =~ /^\d{4}-\d{2}-\d{2}T/ {
       grok {
-        match => { "filter_message" => "%{TIMESTAMP_ISO8601}\s+%{NOTSPACE}\s+%{NOTSPACE}\s+%{NOTSPACE}\s+-\s+-\s+%{GREEDYDATA:filter_message}" }
-        overwrite => [ "filter_message" ]
+        match => { "filter_message" => [
+          "%{TIMESTAMP_ISO8601}\s+%{NOTSPACE}\s+%{NOTSPACE}\s+-\s+-\s+%{NOTSPACE}\s+-\s+-\s+%{GREEDYDATA:message}",
+          "%{TIMESTAMP_ISO8601}\s+%{NOTSPACE}\s+%{NOTSPACE}\s+%{NOTSPACE}\s+-\s+-\s+%{GREEDYDATA:message}"
+        ] }
+        overwrite => [ "message" ]
       }
     }
 
-    # 3. If the remaining payload is still RFC5424, strip that too
-    if [filter_message] =~ /^<\d+>\d+\s+/ {
-      grok {
-        match => { "filter_message" => "(?:<%{INT}>%{INT}\s+)?%{TIMESTAMP_ISO8601}\s+%{NOTSPACE}\s+%{NOTSPACE}\s+%{NOTSPACE}\s+-\s+-\s+%{GREEDYDATA:filter_message}" }
-        overwrite => [ "filter_message" ]
-      }
-    }
-
-    # 4. Final cleanup for pfELK consumption
-    mutate { 
+    # 3. Handoff to unbound parser.
+    mutate {
+      copy => { "message" => "filter_message" }
       strip => ["filter_message"]
     }
   }

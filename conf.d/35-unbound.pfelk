@@ -12,7 +12,6 @@ filter {
     if ![filter_message] and [message] {
       mutate {
         copy => { "message" => "filter_message" }
-        add_tag => "unbound_fallback_copy_message"
       }
     }
 
@@ -23,8 +22,17 @@ filter {
         }
         overwrite => [ "filter_message" ]
       }
-      mutate {
-        add_tag => "unbound_fallback_strip_rfc5424"
+    }
+
+    if [filter_message] =~ /^\d{4}-\d{2}-\d{2}T/ {
+      grok {
+        match => {
+          "filter_message" => [
+            "%{TIMESTAMP_ISO8601}\s+%{NOTSPACE}\s+%{NOTSPACE}\s+-\s+-\s+%{NOTSPACE}\s+-\s+-\s+%{GREEDYDATA:filter_message}",
+            "%{TIMESTAMP_ISO8601}\s+%{NOTSPACE}\s+%{NOTSPACE}\s+%{NOTSPACE}\s+-\s+-\s+%{GREEDYDATA:filter_message}"
+          ]
+        }
+        overwrite => [ "filter_message" ]
       }
     }
 
