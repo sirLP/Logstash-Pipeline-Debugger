@@ -21,6 +21,7 @@ filter {
           "filter_message" => "<%{INT}>%{INT}\s+%{TIMESTAMP_ISO8601}\s+%{NOTSPACE}\s+%{NOTSPACE}\s+%{NOTSPACE}\s+%{NOTSPACE}\s+%{NOTSPACE}\s+%{GREEDYDATA:filter_message}"
         }
         overwrite => [ "filter_message" ]
+        tag_on_failure => []
       }
     }
 
@@ -33,6 +34,22 @@ filter {
           ]
         }
         overwrite => [ "filter_message" ]
+        tag_on_failure => []
+      }
+    }
+
+    if [filter_message] !~ /^\[\d+:\d+\]\s+/ {
+      grok {
+        match => {
+          "filter_message" => ".*(?<unbound_payload>\[%{INT:[process][pgid]}:%{INT:[process][thread][id]}\]\s+%{LOGLEVEL:[log][level]}:\s+%{GREEDYDATA})"
+        }
+        tag_on_failure => []
+      }
+      if [unbound_payload] {
+        mutate {
+          replace => { "filter_message" => "%{unbound_payload}" }
+          remove_field => [ "unbound_payload" ]
+        }
       }
     }
 
