@@ -147,7 +147,7 @@ filter {
         add_tag => [ "out_of_state" ]
       }
     }
-    else if [pf][tcp][flags] == "S" {
+    else if [pf][tcp][flags] == "S" and [event][action] == "block" {
       mutate {
         add_field => { "[pf][block_reason]" => "New Connection Attempt (Blocked)" }
         add_tag => [ "unauthorized_attempt" ]
