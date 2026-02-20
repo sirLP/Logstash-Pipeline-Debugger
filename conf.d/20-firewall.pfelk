@@ -140,6 +140,20 @@ filter {
         }
       }
     }
+
+    if [pf][tcp][flags] in ["FPA", "FA", "RA", "PA"] {
+      mutate {
+        add_field => { "[pf][block_reason]" => "TCP Out-of-State (Harmless)" }
+        add_tag => [ "out_of_state" ]
+      }
+    }
+    else if [pf][tcp][flags] == "S" {
+      mutate {
+        add_field => { "[pf][block_reason]" => "New Connection Attempt (Blocked)" }
+        add_tag => [ "unauthorized_attempt" ]
+      }
+    }
+
     # [ECS] Rename values/fields for ECS compliance
     if [network][direction] =~ /^out$/ {
       mutate {
