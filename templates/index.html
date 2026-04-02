@@ -57,6 +57,12 @@
                             <strong>Auto-detected:</strong> <span id="detected-type-name"></span>
                         </div>
                     </div>
+                    <div class="form-group">
+                        <label for="input-stream-selector">Input Stream (optional override)</label>
+                        <select id="input-stream-selector" class="input-stream-select">
+                            <option value="">Auto-detect from log content</option>
+                        </select>
+                    </div>
                     <textarea id="log-entry" placeholder="<134>1 2026-02-12T10:30:45.123456-05:00 pfSense.local filterlog 12345 - - 5,,,1000000103,igb0,match,block,in,4,0x0,,64,0,0,DF,6,tcp,60,192.168.1.100,8.8.8.8,12345,53,0,S,1234567890,,1024,,mss;sackOK;TS"></textarea>
                     <div class="log-input-actions">
                         <button id="parse-btn" class="btn-primary">Parse Log Entry</button>

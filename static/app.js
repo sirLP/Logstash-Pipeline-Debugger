@@ -107,6 +107,7 @@ const resultsContainer = document.getElementById('results-container');
 const configChainContainer = document.getElementById('config-chain-container');
 const addConfigBtn = document.getElementById('add-config-btn');
 const addPastedConfigBtn = document.getElementById('add-pasted-config');
+const inputStreamSelector = document.getElementById('input-stream-selector');
 // Input stream UI removed - using auto-detection
 // const inputStreamsContainer = document.getElementById('input-streams-container');
 // const addInputStreamBtn = document.getElementById('add-input-stream-btn');
@@ -461,6 +462,7 @@ function handleSampleConfigClick(e) {
     if (configType === 'pfsense') {
         addConfigToChain('Sample pfSense Config', sampleConfig);
         renderConfigChain();
+        extractInputsFromConfig();
     }
 }
 
@@ -582,8 +584,28 @@ function renderInputStreams() {
  * Update input stream selector dropdown (disabled - using auto-detection)
  */
 function updateInputStreamSelector() {
-    // No longer needed - using auto-detection instead
-    return;
+    if (!inputStreamSelector) return;
+
+    inputStreamSelector.innerHTML = '<option value="">Auto-detect from log content</option>';
+
+    if (!inputStreams || inputStreams.length === 0) {
+        return;
+    }
+
+    inputStreams.forEach((stream) => {
+        const option = document.createElement('option');
+        option.value = String(stream.id);
+        option.textContent = formatInputStreamLabel(stream);
+        inputStreamSelector.appendChild(option);
+    });
+}
+
+function formatInputStreamLabel(stream) {
+    const protocol = (stream.protocol || '').toUpperCase();
+    const type = stream.type || 'unknown';
+    const port = stream.port || '?';
+    const id = stream.id_name ? `${stream.id_name} · ` : '';
+    return `${id}${type} (${protocol}:${port})`;
 }
 
 /**
@@ -606,10 +628,23 @@ async function handleParse() {
         // Auto-detect log type from content
         const detected = autoDetectLogType(logEntry);
         let inputStreamInfo = null;
+        const selectedInputStreamId = inputStreamSelector ? inputStreamSelector.value : '';
+        const selectedInputStream = selectedInputStreamId
+            ? inputStreams.find(stream => String(stream.id) === String(selectedInputStreamId))
+            : null;
 
         const hasMatchingPcapContext = selectedPcapContext && selectedPcapContext.payload === logEntry;
-        
-        if (hasMatchingPcapContext && selectedPcapContext.inputStream) {
+
+        if (selectedInputStream) {
+            inputStreamInfo = {
+                name: formatInputStreamLabel(selectedInputStream),
+                type: selectedInputStream.type || 'syslog',
+                port: selectedInputStream.port || null,
+                protocol: selectedInputStream.protocol || null,
+                tags: selectedInputStream.tags || null
+            };
+            console.log('Using manually selected input stream:', inputStreamInfo.name || inputStreamInfo.type);
+        } else if (hasMatchingPcapContext && selectedPcapContext.inputStream) {
             inputStreamInfo = selectedPcapContext.inputStream;
             console.log('Using PCAP-derived input stream:', inputStreamInfo.name || inputStreamInfo.type);
         } else if (detected) {
@@ -736,13 +771,47 @@ function displayResults(result, configCount, inputStreamInfo) {
     // Display final event
     const finalEventSection = document.createElement('div');
     finalEventSection.className = 'final-event-section';
+    const finalEventCount = result.processing.finalEventCount || (Array.isArray(result.processing.finalEvents) ? result.processing.finalEvents.length : 1);
     finalEventSection.innerHTML = `
-        <h3 style="margin-top: 30px;">🎯 Final Event 
+        <h3 style="margin-top: 30px;">🎯 Final Event ${finalEventCount > 1 ? `<span style="font-size: 0.85em; color: #667eea;">(${finalEventCount} events after fan-out, showing first)</span>` : ''}
             <button class="btn-secondary" onclick="showSummaryModal(lastParseResult.processing.finalEvent)" style="margin-left: 15px;">📋 View Summary</button>
         </h3>
         <pre class="event-json">${JSON.stringify(result.processing.finalEvent, null, 2)}</pre>
     `;
     resultsContainer.appendChild(finalEventSection);
+
+    if (finalEventCount > 1 && Array.isArray(result.processing.finalEvents)) {
+        const fanOutSection = document.createElement('div');
+        fanOutSection.className = 'final-event-section';
+
+        const fanOutItems = result.processing.finalEvents.map((ev, index) => {
+            const ts = ev['@timestamp'] || ev?.log?.syslog?.timestamp || 'N/A';
+            const action = ev['action'] || ev?.event?.action || ev?.event?.dataset || 'N/A';
+            const src = ev?.src_ip || ev?.source?.ip || ev?.client_ip || 'N/A';
+            const dst = ev?.dst_ip || ev?.destination?.ip || 'N/A';
+
+            return `
+                <details style="margin-bottom: 8px;">
+                    <summary style="cursor: pointer; font-weight: 600; color: #333;">
+                        #${index + 1} · ${escapeHtml(String(action))} · ${escapeHtml(String(src))} → ${escapeHtml(String(dst))} · ${escapeHtml(String(ts))}
+                    </summary>
+                    <div style="margin-top: 8px; margin-bottom: 8px;">
+                        <button class="btn-secondary" onclick="copyFanOutEvent(${index})">📋 Copy JSON</button>
+                    </div>
+                    <pre class="event-json" style="margin-top: 8px;">${JSON.stringify(ev, null, 2)}</pre>
+                </details>
+            `;
+        }).join('');
+
+        fanOutSection.innerHTML = `
+            <h3 style="margin-top: 20px;">🧩 Fan-out Events</h3>
+            <div style="background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px;">
+                ${fanOutItems}
+            </div>
+        `;
+
+        resultsContainer.appendChild(fanOutSection);
+    }
     
     // Display Elasticsearch output information only if output config is present
     if (result.output) {
@@ -836,6 +905,22 @@ function displayResults(result, configCount, inputStreamInfo) {
     // Store for export
     lastParsingResult = result;
 }
+
+window.copyFanOutEvent = async function(index) {
+    try {
+        const events = lastParseResult?.processing?.finalEvents;
+        if (!Array.isArray(events) || index < 0 || index >= events.length) {
+            alert('Fan-out event not found');
+            return;
+        }
+
+        const payload = JSON.stringify(events[index], null, 2);
+        await navigator.clipboard.writeText(payload);
+    } catch (error) {
+        alert('Unable to copy JSON to clipboard');
+        console.error(error);
+    }
+};
 
 /**
  * Count field changes in processing tree
@@ -1372,17 +1457,28 @@ function extractInputsFromConfig() {
         return;
     }
     
-    // Note: Input stream UI removed - auto-detection is used instead
-    // The 00-input.pfelk config defines the actual input sources for Logstash
-    
+    inputStreams = [];
     let totalInputsFound = 0;
     
     configChain.forEach((config, configIndex) => {
         const inputs = extractInputBlocks(config.content);
         Logger.info(`Config ${configIndex + 1} (${config.name}): Found ${inputs.length} input sources`);
+        inputs.forEach((input, inputIndex) => {
+            inputStreams.push({
+                id: `${configIndex}-${inputIndex}-${input.protocol}-${input.port || 'na'}-${input.type || 'na'}`,
+                id_name: input.id || '',
+                name: config.name,
+                protocol: input.protocol || 'udp',
+                port: input.port || null,
+                type: input.type || 'syslog',
+                tags: input.tags || null
+            });
+        });
         totalInputsFound += inputs.length;
     });
     
+    updateInputStreamSelector();
+
     // Silent success - no popup
     Logger.info(`Extracted ${totalInputsFound} input source(s) from configuration files`);
 }
@@ -1655,7 +1751,7 @@ function extractFiltersFromConfig(configText) {
             };
             filters.push(filter);
             Logger.structure(`Found ELSE conditional at depth ${elseDepth}`, filter);
-        } else if (trimmed.match(/^(grok|mutate|date|csv|json|kv|dissect|geoip|translate|cidr|dns)\s*\{/)) {
+        } else if (trimmed.match(/^(grok|mutate|date|csv|json|kv|dissect|geoip|translate|cidr|dns|split)\s*\{/)) {
             const filterType = trimmed.match(/^(\w+)\s*\{/)[1];
             const filter = {
                 type: 'filter',
@@ -2049,6 +2145,7 @@ function showSummaryModal(finalEvent) {
 function detectEventLogType(event) {
     const appname = event['log']?.['syslog']?.['appname'] || '';
     const tags = event['tags'] || [];
+    const dataset = event['event']?.['dataset'] || '';
     
     // Check for Suricata IDS
     if (appname === 'suricata' || tags.includes('suricata') || event['suricata']) {
@@ -2088,6 +2185,18 @@ function detectEventLogType(event) {
     // Check for Squid
     if (appname.includes('squid') || tags.includes('squid')) {
         return 'squid';
+    }
+
+    // Check for Omada
+    if (
+        appname === 'omada' ||
+        tags.includes('omada') ||
+        tags.includes('omada_raw') ||
+        dataset === 'pfelk.omada' ||
+        event['ap_mac'] ||
+        event['client_mac']
+    ) {
+        return 'omada';
     }
     
     // Check for firewall traffic logs
@@ -2135,6 +2244,9 @@ function generateSummaryContent(finalEvent, logType) {
             break;
         case 'dns':
             sections = generateDNSSummary(finalEvent, common);
+            break;
+        case 'omada':
+            sections = generateOmadaSummary(finalEvent, common);
             break;
         case 'dhcp':
             sections = generateDHCPSummary(finalEvent, common);
@@ -2614,6 +2726,101 @@ function generateOpenVPNSummary(event, common) {
 }
 
 /**
+ * Generate Omada network flow summary
+ */
+function generateOmadaSummary(event, common) {
+    const srcIp = event['src_ip'] || event['source']?.['ip'] || 'N/A';
+    const dstIp = event['dst_ip'] || event['destination']?.['ip'] || 'N/A';
+    const srcPort = event['src_port'] ?? event['source']?.['port'] ?? 'N/A';
+    const dstPort = event['dst_port'] ?? event['destination']?.['port'] ?? 'N/A';
+    const protocol = event['protocol'] ?? event['network']?.['iana_number'] ?? event['network']?.['protocol'] ?? 'N/A';
+    const apMac = event['ap_mac'] || event['observer']?.['mac'] || 'N/A';
+    const clientMac = event['client_mac'] || event['source']?.['mac'] || 'N/A';
+    const clientName = event['client_name'] || 'N/A';
+    const apName = event['ap_name'] || 'N/A';
+    const ssid = event['ssid'] || 'N/A';
+    const wifiChannel = event['wifi_channel'] ?? 'N/A';
+    const action = event['action'] || event['event']?.['action'] || 'N/A';
+    const unixTs = event['unix_timestamp'] || 'N/A';
+
+    return `
+        <div class="summary-grid">
+            <div class="summary-section">
+                <h3>📶 Omada Device Flow</h3>
+                <div class="summary-item">
+                    <span class="summary-label">Action:</span>
+                    <span class="summary-value action">${escapeHtml(String(action))}</span>
+                </div>
+                <div class="summary-item">
+                    <span class="summary-label">AP MAC:</span>
+                    <span class="summary-value">${escapeHtml(String(apMac))}</span>
+                </div>
+                <div class="summary-item">
+                    <span class="summary-label">AP Name:</span>
+                    <span class="summary-value">${escapeHtml(String(apName))}</span>
+                </div>
+                <div class="summary-item">
+                    <span class="summary-label">Client MAC:</span>
+                    <span class="summary-value">${escapeHtml(String(clientMac))}</span>
+                </div>
+                <div class="summary-item">
+                    <span class="summary-label">Client Name:</span>
+                    <span class="summary-value">${escapeHtml(String(clientName))}</span>
+                </div>
+                <div class="summary-item">
+                    <span class="summary-label">Source:</span>
+                    <span class="summary-value ip">${escapeHtml(String(srcIp))}:${escapeHtml(String(srcPort))}</span>
+                </div>
+                <div class="summary-item">
+                    <span class="summary-label">Destination:</span>
+                    <span class="summary-value ip">${escapeHtml(String(dstIp))}:${escapeHtml(String(dstPort))}</span>
+                </div>
+                <div class="summary-item">
+                    <span class="summary-label">Protocol:</span>
+                    <span class="summary-value">${escapeHtml(String(protocol))}</span>
+                </div>
+                <div class="summary-item">
+                    <span class="summary-label">SSID:</span>
+                    <span class="summary-value">${escapeHtml(String(ssid))}</span>
+                </div>
+                <div class="summary-item">
+                    <span class="summary-label">WiFi Channel:</span>
+                    <span class="summary-value">${escapeHtml(String(wifiChannel))}</span>
+                </div>
+            </div>
+
+            <div class="summary-section">
+                <h3>📋 Controller Details</h3>
+                <div class="summary-item">
+                    <span class="summary-label">Product:</span>
+                    <span class="summary-value">${escapeHtml(event['observer']?.['product'] || 'Omada Controller')}</span>
+                </div>
+                <div class="summary-item">
+                    <span class="summary-label">Vendor:</span>
+                    <span class="summary-value">${escapeHtml(event['observer']?.['vendor'] || 'TP-Link')}</span>
+                </div>
+                <div class="summary-item">
+                    <span class="summary-label">Dataset:</span>
+                    <span class="summary-value">${escapeHtml(event['event']?.['dataset'] || 'pfelk.omada')}</span>
+                </div>
+                <div class="summary-item">
+                    <span class="summary-label">Unix Timestamp:</span>
+                    <span class="summary-value">${escapeHtml(String(unixTs))}</span>
+                </div>
+                <div class="summary-item">
+                    <span class="summary-label">Timestamp:</span>
+                    <span class="summary-value">${escapeHtml(common.timestamp)}</span>
+                </div>
+                <div class="summary-item">
+                    <span class="summary-label">Hostname:</span>
+                    <span class="summary-value">${escapeHtml(common.hostname)}</span>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+/**
  * Generate SSHGuard attack detection summary
  */
 function generateSSHGuardSummary(event, common) {
@@ -2916,6 +3123,13 @@ function autoDetectLogType(logContent) {
             tags: ['pfelk', 'openvpn'],
             pattern: /openvpn/i,
             appname: 'openvpn'
+        },
+        {
+            name: 'Omada Controller',
+            type: 'omada',
+            tags: ['pfelk', 'omada_raw'],
+            pattern: /\b(AP|SW|GW)\b\s+MAC=|\bMAC SRC=|\bIP SRC=|omada/i,
+            appname: 'omada'
         },
         {
             name: 'Squid Proxy',

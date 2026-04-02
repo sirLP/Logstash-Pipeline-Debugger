@@ -22,6 +22,14 @@ input {
     codec => line { charset => "UTF-8" }
     tags => ["pfelk", "unbound_raw"]
   }
+
+  udp {
+    id => "pfelk-omada-udp"
+    port => 5144
+    type => "omada"
+    codec => plain { charset => "UTF-8" }
+    tags => ["pfelk", "omada_raw"]
+  }
 }
 
 filter {
@@ -67,6 +75,29 @@ filter {
     mutate {
       copy => { "message" => "filter_message" }
       strip => ["filter_message"]
+    }
+  }
+  else if [type] == "omada" {
+    mutate {
+      copy => { "message" => "filter_message" }
+      strip => ["filter_message"]
+      add_tag => ["omada"]
+      replace => {
+        "[event][dataset]" => "pfelk.omada"
+        "[data_stream][dataset]" => "pfelk.omada"
+        "[data_stream][namespace]" => "omada"
+      }
+      add_field => {
+        "[event][module]" => "omada"
+        "[observer][vendor]" => "TP-Link"
+        "[observer][product]" => "Omada Controller"
+        "[observer][type]" => "wireless_controller"
+      }
+    }
+    if ![log][syslog][appname] {
+      mutate {
+        add_field => { "[log][syslog][appname]" => "omada" }
+      }
     }
   }
   else {

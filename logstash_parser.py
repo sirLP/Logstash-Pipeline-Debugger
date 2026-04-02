@@ -380,6 +380,10 @@ class LogstashParser:
                 result.update(self._apply_cidr(config, event))
             elif filter_type == 'dns':
                 result.update(self._apply_dns(config, event))
+            elif filter_type == 'split':
+                result.update(self._apply_split(config, event))
+            elif filter_type == 'drop':
+                result.update(self._apply_drop(config, event))
             # Add more filter types as needed
         except Exception as e:
             import traceback
@@ -389,6 +393,74 @@ class LogstashParser:
             result['changes'] = 'Error'
         
         return result
+
+    def _apply_split(self, config: str, event: Dict[str, Any]) -> Dict[str, Any]:
+        """Apply Logstash split filter semantics (fan-out events)."""
+        field_match = re.search(r'field\s*=>\s*"([^"]+)"', config)
+        if not field_match:
+            return {
+                'changes': 'No Changes',
+                'fields_added': [],
+                'fields_modified': []
+            }
+
+        field = field_match.group(1)
+        value = self._get_nested_field(event, field)
+
+        terminator = "\n"
+        terminator_match = re.search(r'terminator\s*=>\s*"([^"]+)"', config)
+        if terminator_match:
+            terminator = terminator_match.group(1)
+        try:
+            terminator = bytes(terminator, 'utf-8').decode('unicode_escape')
+        except Exception:
+            pass
+
+        if value is None:
+            return {
+                'changes': 'No Changes',
+                'fields_added': [],
+                'fields_modified': []
+            }
+
+        if isinstance(value, list):
+            split_values = value
+        elif isinstance(value, str):
+            split_values = value.split(terminator)
+        else:
+            split_values = [value]
+
+        split_values = [item for item in split_values if item is not None and str(item).strip() != ""]
+
+        generated_events = []
+        for item in split_values:
+            cloned_event = deepcopy(event)
+            self._set_nested_field(cloned_event, field, item)
+            generated_events.append(cloned_event)
+
+        if not generated_events:
+            generated_events = [deepcopy(event)]
+
+        first_event = generated_events[0]
+        event.clear()
+        event.update(first_event)
+
+        return {
+            'changes': 'Events Split' if len(generated_events) > 1 else 'No Changes',
+            'fields_added': [],
+            'fields_modified': [field] if len(generated_events) > 1 else [],
+            'generated_events': generated_events,
+            'split_count': len(generated_events)
+        }
+
+    def _apply_drop(self, config: str, event: Dict[str, Any]) -> Dict[str, Any]:
+        """Apply Logstash drop filter semantics (discard event)."""
+        return {
+            'changes': 'Event Dropped',
+            'fields_added': [],
+            'fields_modified': [],
+            'dropped': True
+        }
     
     def _apply_grok(self, config: str, event: Dict[str, Any]) -> Dict[str, Any]:
         """Apply grok filter using pygrok library with support for nested field names"""
@@ -838,7 +910,12 @@ class LogstashParser:
             for field, separator in field_pairs:
                 value = self._get_nested_field(event, field)
                 if value is not None and isinstance(value, str):
-                    self._set_nested_field(event, field, value.split(separator))
+                    try:
+                        decoded_separator = bytes(separator, 'utf-8').decode('unicode_escape')
+                    except Exception:
+                        decoded_separator = separator
+                    normalized_value = value.replace('\\r\\n', '\n').replace('\\n', '\n')
+                    self._set_nested_field(event, field, normalized_value.split(decoded_separator))
                     fields_modified.append(field)
         
         # join - Join array into string
@@ -2173,7 +2250,7 @@ def parse_config_to_tree(config_text):
             print(f"[TREE PARSE] Adding conditional 'else' at depth {else_depth}, line {i + 1}")
             
         # Parse filter plugins
-        elif re.match(r'^(grok|mutate|date|csv|json|kv|dissect|geoip|translate|cidr|dns|drop)\s*\{', trimmed):
+        elif re.match(r'^(grok|mutate|date|csv|json|kv|dissect|geoip|translate|cidr|dns|drop|split)\s*\{', trimmed):
             filter_match = re.match(r'^(\w+)\s*\{', trimmed)
             if filter_match:
                 filter_type = filter_match.group(1)

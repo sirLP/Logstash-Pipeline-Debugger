@@ -158,6 +158,7 @@ def parse_log():
                 event['tags'] = input_stream['tags']
         
         # Process through each config using tree-based parsing
+        current_events = [event]
         all_steps = []
         
         for config in configs:
@@ -169,10 +170,12 @@ def parse_log():
             # Parse config to tree
             tree = parse_config_to_tree(config['content'])
             
-            # Process event through tree
+            # Process events through tree
+            tree_steps, current_events = process_tree(tree, current_events, parser)
             config_result = {
                 'config_name': config['name'],
-                'tree_steps': process_tree(tree, event, parser)
+                'tree_steps': tree_steps,
+                'event_count_after': len(current_events)
             }
             all_steps.append(config_result)
             
@@ -200,7 +203,9 @@ def parse_log():
             },
             'processing': {
                 'configs': all_steps,
-                'finalEvent': event
+                'finalEvent': current_events[0] if current_events else {},
+                'finalEvents': current_events,
+                'finalEventCount': len(current_events)
             },
             'output': output_config
         }
@@ -217,11 +222,12 @@ def parse_log():
         }), 500
 
 
-def process_tree(nodes, event, parser, depth=0):
-    """Process event through tree structure recursively"""
+def process_tree(nodes, events, parser, depth=0):
+    """Process events through tree structure recursively."""
     import copy
     results = []
     conditional_matched = False  # Track if any conditional in THIS LEVEL's chain has matched
+    current_events = events if isinstance(events, list) else [events]
     
     for node in nodes:
         if node['type'] == 'conditional':
@@ -242,7 +248,7 @@ def process_tree(nodes, event, parser, depth=0):
                     'depth': depth,
                     'matched': False,
                     'executed': False,
-                    'event_before': copy.deepcopy(event),
+                    'event_before': copy.deepcopy(current_events[0]) if current_events else {},
                     'skipped_reason': 'Previous condition matched',
                     'children': get_tree_structure(node.get('children', []), depth + 1)
                 }
@@ -251,7 +257,8 @@ def process_tree(nodes, event, parser, depth=0):
             
             # Evaluate condition
             print(f"[PROCESS_TREE] Evaluating conditional at line {node.get('line')}: {node['condition']}")
-            condition_result = evaluate_condition(node['condition'], event)
+            reference_event = current_events[0] if current_events else {}
+            condition_result = evaluate_condition(node['condition'], reference_event)
             print(f"[PROCESS_TREE] Condition result: {condition_result}")
             
             step = {
@@ -261,14 +268,15 @@ def process_tree(nodes, event, parser, depth=0):
                 'line': node.get('line'),
                 'depth': depth,
                 'matched': condition_result,
-                'event_before': copy.deepcopy(event),
+                'event_before': copy.deepcopy(reference_event),
                 'children': []
             }
             
             # If condition is true, process children
             if condition_result:
                 print(f"[PROCESS_TREE] Processing {len(node.get('children', []))} children of matched conditional")
-                step['children'] = process_tree(node.get('children', []), event, parser, depth + 1)
+                child_steps, current_events = process_tree(node.get('children', []), current_events, parser, depth + 1)
+                step['children'] = child_steps
                 step['executed'] = True
                 conditional_matched = True  # Mark that we found a match
             else:
@@ -281,9 +289,38 @@ def process_tree(nodes, event, parser, depth=0):
         elif node['type'] == 'filter':
             # Apply filter - use deep copy to capture true before state
             print(f"[PROCESS_TREE] Executing filter '{node['filter_type']}' at line {node.get('line')}")
-            before_event = copy.deepcopy(event)
-            filter_result = parser.apply_filter(node['filter_type'], node['config'], event)
-            print(f"[PROCESS_TREE] Filter '{node['filter_type']}' completed with result: {filter_result.get('changes', 'Unknown')}")
+            before_event = copy.deepcopy(current_events[0]) if current_events else {}
+            count_before = len(current_events)
+
+            aggregate_fields_added = []
+            aggregate_fields_modified = []
+            aggregate_fields_removed = []
+            aggregate_tags_added = []
+            aggregate_tags_removed = []
+            aggregate_changes = []
+            next_events = []
+
+            for ev in current_events:
+                filter_result = parser.apply_filter(node['filter_type'], node['config'], ev)
+                aggregate_changes.append(filter_result.get('changes', 'No Changes'))
+                aggregate_fields_added.extend(filter_result.get('fields_added', []))
+                aggregate_fields_modified.extend(filter_result.get('fields_modified', []))
+                aggregate_fields_removed.extend(filter_result.get('fields_removed', []))
+                aggregate_tags_added.extend(filter_result.get('tags_added', []))
+                aggregate_tags_removed.extend(filter_result.get('tags_removed', []))
+
+                if filter_result.get('dropped'):
+                    continue
+
+                generated = filter_result.get('generated_events')
+                if isinstance(generated, list) and generated:
+                    next_events.extend(generated)
+                else:
+                    next_events.append(ev)
+
+            current_events = next_events
+            count_after = len(current_events)
+            print(f"[PROCESS_TREE] Filter '{node['filter_type']}' completed with result: {aggregate_changes[-1] if aggregate_changes else 'Unknown'} ({count_before} -> {count_after} events)")
             
             step = {
                 'type': 'filter',
@@ -292,19 +329,21 @@ def process_tree(nodes, event, parser, depth=0):
                 'config': node.get('config', ''),
                 'depth': depth,
                 'executed': True,
-                'changes': filter_result.get('changes', 'No Changes'),
-                'fields_added': filter_result.get('fields_added', []),
-                'fields_modified': filter_result.get('fields_modified', []),
-                'fields_removed': filter_result.get('fields_removed', []),
-                'tags_added': filter_result.get('tags_added', []),
-                'tags_removed': filter_result.get('tags_removed', []),
+                'changes': aggregate_changes[-1] if aggregate_changes else 'No Changes',
+                'fields_added': sorted(set(aggregate_fields_added)),
+                'fields_modified': sorted(set(aggregate_fields_modified)),
+                'fields_removed': sorted(set(aggregate_fields_removed)),
+                'tags_added': sorted(set(aggregate_tags_added)),
+                'tags_removed': sorted(set(aggregate_tags_removed)),
+                'event_count_before': count_before,
+                'event_count_after': count_after,
                 'event_before': before_event,
-                'event_after': copy.deepcopy(event)
+                'event_after': copy.deepcopy(current_events[0]) if current_events else {}
             }
             
             results.append(step)
     
-    return results
+    return results, current_events
 
 
 def get_tree_structure(nodes, depth):

@@ -1,0 +1,129 @@
+# 26-omada.pfelk
+################################################################################
+# Version: 26.02                                                               #
+# Required: False                                                              #
+# Description: Parses TP-Link Omada OC300 syslog events and routes them to    #
+#              dedicated omada data streams                                    #
+################################################################################
+#
+filter {
+  if [type] == "omada" or "omada_raw" in [tags] {
+    if ![filter_message] and [message] {
+      mutate {
+        copy => { "message" => "filter_message" }
+      }
+    }
+
+    mutate {
+      gsub => [
+        "filter_message", "\u0000", "",
+        "filter_message", "\\\\u0000", "",
+        "filter_message", "\\n", "\n",
+        "filter_message", "\\\\n", "\n"
+      ]
+    }
+
+    mutate {
+      split => { "filter_message" => "\n" }
+    }
+    split {
+      field => "filter_message"
+    }
+    mutate {
+      strip => ["filter_message"]
+      add_tag => ["omada_batched"]
+    }
+
+    if [filter_message] == "" {
+      drop { }
+    }
+
+    if [filter_message] == "\\u0000" {
+      drop { }
+    }
+
+    # RFC5424: <PRI>VERSION TIMESTAMP HOST APP PROCID MSGID SD MSG
+    if [filter_message] =~ /^<\d+>\d+\s+/ {
+      grok {
+        match => {
+          "filter_message" => [
+            "<%{INT:[log][syslog][priority]}>%{INT:[log][syslog][version]} %{TIMESTAMP_ISO8601:[log][syslog][timestamp]} %{NOTSPACE:[host][name]} %{NOTSPACE:[log][syslog][appname]} %{NOTSPACE:[log][syslog][procid]} %{NOTSPACE:[log][syslog][msgid]} %{NOTSPACE:[log][syslog][structured_data]} %{GREEDYDATA:filter_message}",
+            "<%{INT:[log][syslog][priority]}>%{INT:[log][syslog][version]} %{DATE:[log][syslog][date]} %{TIME:[log][syslog][time]} %{NOTSPACE:[host][name]} %{NOTSPACE:[log][syslog][appname]} %{NOTSPACE:[log][syslog][procid]} %{NOTSPACE:[log][syslog][msgid]} %{NOTSPACE:[log][syslog][structured_data]} %{GREEDYDATA:filter_message}"
+          ]
+        }
+        overwrite => [ "filter_message" ]
+        tag_on_failure => ["grok_fail_26_omada_rfc5424"]
+      }
+    }
+
+    # RFC3164: <PRI>MMM dd HH:mm:ss HOST APP[PID]: MSG
+    else if [filter_message] =~ /^<\d+>[A-Z][a-z]{2}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}\s+/ {
+      grok {
+        match => {
+          "filter_message" => "<%{INT:[log][syslog][priority]}>%{SYSLOGTIMESTAMP:[log][syslog][timestamp]} %{HOSTNAME:[host][name]} %{DATA:[log][syslog][appname]}(?:\[%{INT:[process][pid]}\])?: %{GREEDYDATA:filter_message}"
+        }
+        overwrite => [ "filter_message" ]
+        tag_on_failure => ["grok_fail_26_omada_rfc3164"]
+      }
+    }
+
+    grok {
+      match => { "filter_message" => "(?:<%{INT:[log][syslog][priority]}>%{SYSLOGTIMESTAMP:[log][syslog][timestamp]} %{IPORHOST:[host][name]} )?\[%{NUMBER:unix_timestamp}\] AP MAC=%{MAC:ap_mac} MAC SRC=%{MAC:client_mac}\s+IP SRC=%{IP:src_ip} IP DST=%{IP:dst_ip} IP proto=%{INT:protocol}(?:\s+SPT=%{INT:src_port}\s+DPT=%{INT:dst_port})?" }
+      tag_on_failure => ["grok_fail_26_omada_ap_flow"]
+    }
+
+    if ![log][syslog][timestamp] and [log][syslog][date] and [log][syslog][time] {
+      mutate {
+        add_field => { "[log][syslog][timestamp]" => "%{[log][syslog][date]} %{[log][syslog][time]}" }
+      }
+    }
+
+    grok {
+      match => {
+        "filter_message" => "\[client:%{DATA:client_name}:(?<[client_mac]>(?:[0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2})\] \(IP: %{IP:client_ip}\) (?<[action]>\w+\s+online) on \[ap:%{DATA:ap_name}:(?<[ap_mac]>(?:[0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2})\] with SSID \"%{DATA:ssid}\" on channel %{INT:wifi_channel}\.?(?:\s*)$"
+      }
+      tag_on_failure => ["grok_fail_26_omada_client_online"]
+    }
+
+    mutate {
+      convert => {
+        "src_port" => "integer"
+        "dst_port" => "integer"
+        "protocol" => "integer"
+        "wifi_channel" => "integer"
+      }
+      lowercase => [ "action" ]
+    }
+
+    date {
+      match => [ "[log][syslog][timestamp]", "ISO8601", "yyyy-MM-dd HH:mm:ss" ]
+      target => "@timestamp"
+    }
+
+    date {
+      match => [ "unix_timestamp", "UNIX" ]
+      target => "@timestamp"
+    }
+
+    mutate {
+      add_tag => "omada"
+      replace => {
+        "[event][dataset]" => "pfelk.omada"
+        "[data_stream][dataset]" => "pfelk.omada"
+        "[data_stream][namespace]" => "omada"
+      }
+      add_field => {
+        "[event][module]" => "omada"
+        "[observer][vendor]" => "TP-Link"
+        "[observer][product]" => "Omada Controller"
+        "[observer][type]" => "wireless_controller"
+      }
+    }
+
+    if ![log][syslog][appname] {
+      mutate {
+        add_field => { "[log][syslog][appname]" => "omada" }
+      }
+    }
+  }
+}
